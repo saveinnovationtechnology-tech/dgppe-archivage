@@ -2,8 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import {
+  Building2, LayoutDashboard, FilePlus, FolderOpen,
+  Search, Users, ClipboardList, LogOut, ChevronRight,
+  Menu, Bell, Plus, X, Edit2, Trash2, UserCheck,
+  UserX, Shield, CheckCircle, AlertCircle, RefreshCw,
+  Mail, User, Lock, Briefcase
+} from 'lucide-react'
 
 const supabase = createClient()
 
@@ -39,15 +45,11 @@ export default function UsersPage() {
   const [password, setPassword] = useState('')
   const [userEmail, setUserEmail] = useState('')
   const [isAuthed, setIsAuthed] = useState(false)
-  const [userRole, setUserRole] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const [formData, setFormData] = useState({
-    email: '',
-    nom: '',
-    prenom: '',
-    direction: '',
-    role: 'agent_consultation',
-    actif: true,
+    email: '', nom: '', prenom: '', direction: '',
+    role: 'agent_consultation', actif: true,
   })
 
   useEffect(() => {
@@ -55,27 +57,20 @@ export default function UsersPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) { router.push('/login'); return }
-
-        const userId = session.user.id
         setUserEmail(session.user.email || '')
 
-        const { data: profileData, error: profileError } = await supabase
-          .from('profils')
-          .select('role, actif')
-          .eq('id', userId)
-          .single()
+        const { data: profileData } = await supabase
+          .from('profils').select('role, actif').eq('id', session.user.id).single()
 
-        if (profileError || !profileData) { router.push('/dashboard'); return }
-        if (!profileData.actif) { router.push('/login'); return }
+        if (!profileData?.actif) { router.push('/login'); return }
         if (!['administrateur', 'admin', 'gestionnaire'].includes(profileData.role)) {
           router.push('/dashboard'); return
         }
 
-        setUserRole(profileData.role)
         setIsAuthed(true)
         await loadUsers()
         await loadDirections()
-      } catch (err) {
+      } catch {
         router.push('/login')
       } finally {
         setLoading(false)
@@ -85,11 +80,8 @@ export default function UsersPage() {
   }, [router])
 
   const loadUsers = async () => {
-    const { data, error } = await supabase
-      .from('profils')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (error) { setError('Erreur lors du chargement des utilisateurs'); return }
+    const { data, error } = await supabase.from('profils').select('*').order('created_at', { ascending: false })
+    if (error) { setError('Erreur lors du chargement'); return }
     setUsers(data || [])
   }
 
@@ -99,70 +91,34 @@ export default function UsersPage() {
   }
 
   const logAction = async (action: string, details: string) => {
-    const { data: { user: currentUser } } = await supabase.auth.getUser()
-    await supabase.from('logs_activite').insert({
-      utilisateur_id: currentUser?.id,
-      action,
-      details,
-      document_id: null,
-    })
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('logs_activite').insert({ utilisateur_id: user?.id, action, details, document_id: null })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
-    setSuccess(null)
-
+    setError(null); setSuccess(null)
     try {
       if (editingId) {
-        const { error } = await supabase
-          .from('profils')
-          .update({
-            email: formData.email,
-            nom: formData.nom,
-            prenom: formData.prenom,
-            direction: formData.direction,
-            role: formData.role,
-            actif: formData.actif,
-          })
-          .eq('id', editingId)
-
+        const { error } = await supabase.from('profils').update({
+          email: formData.email, nom: formData.nom, prenom: formData.prenom,
+          direction: formData.direction, role: formData.role, actif: formData.actif,
+        }).eq('id', editingId)
         if (error) throw error
-
-        await logAction(
-          'modification',
-          `Modification de l'utilisateur : ${formData.prenom} ${formData.nom} (${formData.email}) — rôle: ${formData.role}`
-        )
-        setSuccess('✅ Utilisateur modifié avec succès')
+        await logAction('modification', `Modification : ${formData.prenom} ${formData.nom} (${formData.email})`)
+        setSuccess('Utilisateur modifié avec succès')
       } else {
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: formData.email,
-          password: password,
-        })
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email: formData.email, password })
         if (authError) throw authError
-
         if (authData.user) {
-          const { error: profilError } = await supabase
-            .from('profils')
-            .insert({
-              id: authData.user.id,
-              email: formData.email,
-              nom: formData.nom,
-              prenom: formData.prenom,
-              direction: formData.direction,
-              role: formData.role,
-              actif: formData.actif,
-            })
+          const { error: profilError } = await supabase.from('profils').insert({
+            id: authData.user.id, ...formData
+          })
           if (profilError) throw profilError
-
-          await logAction(
-            'creation',
-            `Création de l'utilisateur : ${formData.prenom} ${formData.nom} (${formData.email}) — rôle: ${formData.role}`
-          )
+          await logAction('creation', `Création : ${formData.prenom} ${formData.nom} (${formData.email})`)
         }
-        setSuccess('✅ Utilisateur créé avec succès')
+        setSuccess('Utilisateur créé avec succès')
       }
-
       resetForm()
       await loadUsers()
     } catch (err: any) {
@@ -172,34 +128,22 @@ export default function UsersPage() {
 
   const handleEdit = (user: Profil) => {
     setEditingId(user.id)
-    setFormData({
-      email: user.email,
-      nom: user.nom,
-      prenom: user.prenom,
-      direction: user.direction || '',
-      role: user.role,
-      actif: user.actif,
-    })
-    setShowForm(true)
-    setError(null)
-    setSuccess(null)
+    setFormData({ email: user.email, nom: user.nom, prenom: user.prenom, direction: user.direction || '', role: user.role, actif: user.actif })
+    setShowForm(true); setError(null); setSuccess(null)
   }
 
   const handleDelete = async (id: string, email: string) => {
     if (!confirm(`Supprimer l'utilisateur ${email} ?`)) return
     const { error } = await supabase.from('profils').delete().eq('id', id)
     if (error) { setError('Erreur lors de la suppression'); return }
-
-    await logAction('suppression', `Suppression de l'utilisateur : ${email}`)
-    setSuccess('✅ Utilisateur supprimé')
+    await logAction('suppression', `Suppression : ${email}`)
+    setSuccess('Utilisateur supprimé')
     await loadUsers()
   }
 
   const resetForm = () => {
     setFormData({ email: '', nom: '', prenom: '', direction: '', role: 'agent_consultation', actif: true })
-    setPassword('')
-    setEditingId(null)
-    setShowForm(false)
+    setPassword(''); setEditingId(null); setShowForm(false)
   }
 
   const handleLogout = async () => {
@@ -207,304 +151,381 @@ export default function UsersPage() {
     router.push('/login')
   }
 
-  const filteredUsers = users.filter((u) => {
-    const matchSearch =
-      u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredUsers = users.filter(u => {
+    const matchSearch = u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.prenom?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchRole = filterRole === 'all' || u.role === filterRole
     return matchSearch && matchRole
   })
 
+  const getRoleBadge = (role: string) => {
+    if (role === 'administrateur') return 'bg-blue-100 text-blue-700 border border-blue-200'
+    if (role === 'gestionnaire') return 'bg-purple-100 text-purple-700 border border-purple-200'
+    return 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+  }
+
+  const getRoleLabel = (role: string) => {
+    if (role === 'administrateur') return 'Administrateur'
+    if (role === 'gestionnaire') return 'Gestionnaire'
+    return 'Agent consultation'
+  }
+
+  const navItems = [
+    { icon: LayoutDashboard, label: 'Tableau de bord', href: '/dashboard' },
+    { icon: FilePlus, label: 'Ajouter document', href: '/dashboard/documents/add' },
+    { icon: FolderOpen, label: 'Documents', href: '/dashboard/documents/view' },
+    { icon: Search, label: 'Recherche', href: '/dashboard/search' },
+    { icon: Users, label: 'Utilisateurs', href: '/dashboard/users', active: true },
+    { icon: ClipboardList, label: 'Journaux', href: '/dashboard/logs' },
+  ]
+
   if (loading) return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'Arial' }}>
-      <p>Chargement...</p>
+    <div className="flex h-screen items-center justify-center bg-slate-100">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 border-2 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
+        <p className="text-slate-500 text-sm">Chargement...</p>
+      </div>
     </div>
   )
 
   if (!isAuthed) return null
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'Arial' }}>
+    <div className="flex h-screen bg-slate-100 overflow-hidden">
 
-      {/* SIDEBAR */}
-      <aside style={{
-        width: '250px', background: '#1a3c5e', color: 'white',
-        padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem',
-        position: 'fixed', top: 0, left: 0, height: '100vh', overflowY: 'auto'
-      }}>
-        <h2 style={{ margin: 0, fontSize: '1.2rem' }}>🏛️ DGPPE</h2>
-        <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>{userEmail}</p>
-        <hr style={{ borderColor: 'rgba(255,255,255,0.2)' }} />
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <Link href="/dashboard" style={navStyle}>📊 Tableau de bord</Link>
-          <Link href="/dashboard/documents" style={navStyle}>📄 Documents</Link>
-          <Link href="/dashboard/users" style={{ ...navStyle, background: 'rgba(255,255,255,0.25)' }}>👥 Utilisateurs</Link>
-          <Link href="/dashboard/logs" style={navStyle}>📋 Logs</Link>
+      {/* Sidebar */}
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 bg-gradient-to-b from-slate-800 to-slate-900 flex flex-col overflow-hidden shrink-0`}>
+        <div className="p-5 border-b border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-500 flex items-center justify-center shrink-0">
+              <Building2 className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm leading-tight">GED Ministère</p>
+              <p className="text-slate-400 text-xs">Gestion documentaire</p>
+            </div>
+          </div>
+        </div>
+
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {navItems.map((item) => (
+            <a key={item.href} href={item.href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+                ${item.active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}>
+              <item.icon className="w-4 h-4 shrink-0" />
+              {item.label}
+            </a>
+          ))}
         </nav>
-        <div style={{ marginTop: 'auto' }}>
-          <button onClick={handleLogout} style={{
-            background: 'rgba(255,255,255,0.1)', color: 'white', border: 'none',
-            padding: '0.6rem 1rem', borderRadius: '8px', cursor: 'pointer',
-            width: '100%', fontSize: '0.9rem'
-          }}>
-            🚪 Déconnexion
+
+        <div className="p-3 border-t border-slate-700">
+          <div className="px-3 py-2 mb-2">
+            <p className="text-slate-400 text-xs truncate">{userEmail}</p>
+          </div>
+          <button onClick={handleLogout}
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:bg-red-500/20 hover:text-red-400 transition-all">
+            <LogOut className="w-4 h-4" />
+            Déconnexion
           </button>
         </div>
       </aside>
 
-      {/* MAIN */}
-      <main style={{ marginLeft: '250px', flex: 1, padding: '2rem', background: '#f0f4f8', minHeight: '100vh' }}>
+      {/* Main */}
+      <div className="flex-1 flex flex-col overflow-hidden">
 
-        {/* HEADER */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-          <div>
-            <h1 style={{ margin: 0, color: '#1a3c5e', fontSize: '1.8rem' }}>👥 Gestion des Utilisateurs</h1>
-            <p style={{ margin: '0.3rem 0 0', color: '#666' }}>{users.length} utilisateur(s) enregistré(s)</p>
+        {/* Header */}
+        <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
+              <Menu className="w-5 h-5 text-slate-600" />
+            </button>
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <span>GED</span>
+              <ChevronRight className="w-3 h-3" />
+              <span className="text-slate-800 font-semibold">Utilisateurs</span>
+            </div>
           </div>
-          <button
-            onClick={() => { resetForm(); setShowForm(!showForm) }}
-            style={{
-              background: '#1a3c5e', color: 'white', border: 'none',
-              padding: '0.7rem 1.5rem', borderRadius: '8px', cursor: 'pointer',
-              fontSize: '0.95rem', fontWeight: 'bold'
-            }}
-          >
-            {showForm ? '✕ Annuler' : '+ Nouvel utilisateur'}
-          </button>
-        </div>
-
-        {/* ALERTES */}
-        {error && (
-          <div style={{
-            background: '#ffe0e0', border: '1px solid #f5c6cb', color: '#c00',
-            padding: '0.8rem 1rem', borderRadius: '8px', marginBottom: '1rem'
-          }}>
-            ❌ {error}
-          </div>
-        )}
-        {success && (
-          <div style={{
-            background: '#e0f7e9', border: '1px solid #a5d6a7', color: '#2d6a2d',
-            padding: '0.8rem 1rem', borderRadius: '8px', marginBottom: '1rem'
-          }}>
-            {success}
-          </div>
-        )}
-
-        {/* FORMULAIRE */}
-        {showForm && (
-          <div style={{
-            background: 'white', borderRadius: '12px', padding: '1.5rem',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: '2rem'
-          }}>
-            <h2 style={{ margin: '0 0 1.2rem', color: '#1a3c5e', fontSize: '1.2rem' }}>
-              {editingId ? '✏️ Modifier l\'utilisateur' : '➕ Nouvel utilisateur'}
-            </h2>
-            <form onSubmit={handleSubmit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <input
-                  type="email"
-                  placeholder="Email *"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                  style={inputStyle}
-                />
-                {!editingId && (
-                  <input
-                    type="password"
-                    placeholder="Mot de passe *"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    style={inputStyle}
-                  />
-                )}
-                <input
-                  type="text"
-                  placeholder="Nom *"
-                  value={formData.nom}
-                  onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                  required
-                  style={inputStyle}
-                />
-                <input
-                  type="text"
-                  placeholder="Prénom *"
-                  value={formData.prenom}
-                  onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
-                  required
-                  style={inputStyle}
-                />
-                <select
-                  value={formData.direction}
-                  onChange={(e) => setFormData({ ...formData, direction: e.target.value })}
-                  style={inputStyle}
-                >
-                  <option value="">-- Direction --</option>
-                  {directions.map((d) => (
-                    <option key={d.id} value={d.code}>{d.nom}</option>
-                  ))}
-                </select>
-                <select
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  style={inputStyle}
-                >
-                  <option value="agent_consultation">Agent consultation</option>
-                  <option value="gestionnaire">Gestionnaire</option>
-                  <option value="administrateur">Administrateur</option>
-                </select>
+          <div className="flex items-center gap-3">
+            <button className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
+              <Bell className="w-5 h-5 text-slate-600" />
+            </button>
+            <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                <span className="text-white text-xs font-bold">{userEmail?.[0]?.toUpperCase() || 'U'}</span>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#444' }}>
-                <input
-                  type="checkbox"
-                  checked={formData.actif}
-                  onChange={(e) => setFormData({ ...formData, actif: e.target.checked })}
-                />
-                Compte actif
-              </label>
-              <div style={{ display: 'flex', gap: '0.8rem' }}>
-                <button type="submit" style={{
-                  background: '#1a3c5e', color: 'white', border: 'none',
-                  padding: '0.7rem 1.5rem', borderRadius: '8px', cursor: 'pointer',
-                  fontWeight: 'bold'
-                }}>
-                  {editingId ? '💾 Enregistrer' : '✅ Créer'}
-                </button>
-                <button type="button" onClick={resetForm} style={{
-                  background: '#eee', color: '#444', border: 'none',
-                  padding: '0.7rem 1.5rem', borderRadius: '8px', cursor: 'pointer'
-                }}>
-                  Annuler
+              <span className="text-sm font-medium text-slate-700 hidden md:block">{userEmail}</span>
+            </div>
+          </div>
+        </header>
+
+        {/* Content */}
+        <main className="flex-1 overflow-y-auto">
+
+          {/* Banner */}
+          <div className="bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900 px-8 py-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                    <Users className="w-5 h-5 text-white" />
+                  </div>
+                  <h1 className="text-2xl font-bold text-white">Gestion des utilisateurs</h1>
+                </div>
+                <p className="text-slate-300 text-sm">{users.length} utilisateur{users.length > 1 ? 's' : ''} enregistré{users.length > 1 ? 's' : ''}</p>
+              </div>
+              <button
+                onClick={() => { resetForm(); setShowForm(!showForm) }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white text-slate-800 rounded-xl text-sm font-semibold hover:bg-slate-100 transition-all shadow-lg">
+                {showForm ? <><X className="w-4 h-4" /> Annuler</> : <><Plus className="w-4 h-4" /> Nouvel utilisateur</>}
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-5">
+
+            {/* Alerts */}
+            {error && (
+              <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
+                <AlertCircle className="w-5 h-5 shrink-0" />
+                <p className="text-sm font-medium">{error}</p>
+                <button onClick={() => setError(null)} className="ml-auto"><X className="w-4 h-4" /></button>
+              </div>
+            )}
+            {success && (
+              <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700">
+                <CheckCircle className="w-5 h-5 shrink-0" />
+                <p className="text-sm font-medium">{success}</p>
+                <button onClick={() => setSuccess(null)} className="ml-auto"><X className="w-4 h-4" /></button>
+              </div>
+            )}
+
+            {/* Formulaire */}
+            {showForm && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                    {editingId ? <Edit2 className="w-4 h-4 text-blue-600" /> : <Plus className="w-4 h-4 text-blue-600" />}
+                  </div>
+                  <h2 className="font-semibold text-slate-800">
+                    {editingId ? 'Modifier l\'utilisateur' : 'Nouvel utilisateur'}
+                  </h2>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Email *</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input type="email" value={formData.email} required
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="exemple@ministere.gov" />
+                      </div>
+                    </div>
+                    {!editingId && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Mot de passe *</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input type="password" value={password} required
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="••••••••" />
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Nom *</label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input type="text" value={formData.nom} required
+                          onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Nom de famille" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Prénom *</label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input type="text" value={formData.prenom} required
+                          onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Prénom" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Direction</label>
+                      <div className="relative">
+                        <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <select value={formData.direction}
+                          onChange={(e) => setFormData({ ...formData, direction: e.target.value })}
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
+                          <option value="">-- Sélectionner une direction --</option>
+                          {directions.map(d => <option key={d.id} value={d.code}>{d.nom}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Rôle *</label>
+                      <div className="relative">
+                        <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <select value={formData.role}
+                          onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
+                          <option value="agent_consultation">Agent consultation</option>
+                          <option value="gestionnaire">Gestionnaire</option>
+                          <option value="administrateur">Administrateur</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 mb-5 p-3 bg-slate-50 rounded-xl">
+                    <input type="checkbox" id="actif" checked={formData.actif}
+                      onChange={(e) => setFormData({ ...formData, actif: e.target.checked })}
+                      className="w-4 h-4 rounded accent-blue-600" />
+                    <label htmlFor="actif" className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                      {formData.actif
+                        ? <><UserCheck className="w-4 h-4 text-emerald-600" /> Compte actif</>
+                        : <><UserX className="w-4 h-4 text-red-500" /> Compte inactif</>}
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button type="submit"
+                      className="flex items-center gap-2 px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-semibold transition-colors">
+                      {editingId ? <><Edit2 className="w-4 h-4" /> Enregistrer</> : <><Plus className="w-4 h-4" /> Créer l'utilisateur</>}
+                    </button>
+                    <button type="button" onClick={resetForm}
+                      className="flex items-center gap-2 px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-medium transition-colors">
+                      <X className="w-4 h-4" /> Annuler
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Filtres */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+              <div className="flex flex-col md:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input type="text" placeholder="Rechercher par nom, prénom ou email..."
+                    value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="relative">
+                  <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)}
+                    className="pl-10 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none min-w-[180px]">
+                    <option value="all">Tous les rôles</option>
+                    <option value="agent_consultation">Agent consultation</option>
+                    <option value="gestionnaire">Gestionnaire</option>
+                    <option value="administrateur">Administrateur</option>
+                  </select>
+                </div>
+                <button onClick={loadUsers}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-medium transition-colors">
+                  <RefreshCw className="w-4 h-4" />
+                  Actualiser
                 </button>
               </div>
-            </form>
-          </div>
-        )}
+            </div>
 
-        {/* FILTRES */}
-        <div style={{
-          background: 'white', borderRadius: '12px', padding: '1rem 1.5rem',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: '1.5rem',
-          display: 'flex', gap: '1rem'
-        }}>
-          <input
-            type="text"
-            placeholder="🔍 Rechercher par nom, prénom ou email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ ...inputStyle, flex: 1 }}
-          />
-          <select
-            value={filterRole}
-            onChange={(e) => setFilterRole(e.target.value)}
-            style={{ ...inputStyle, width: '200px' }}
-          >
-            <option value="all">Tous les rôles</option>
-            <option value="agent_consultation">Agent consultation</option>
-            <option value="gestionnaire">Gestionnaire</option>
-            <option value="administrateur">Administrateur</option>
-          </select>
-        </div>
+            {/* Table */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                    <Users className="w-4 h-4 text-slate-600" />
+                  </div>
+                  <h2 className="font-semibold text-slate-800">
+                    {filteredUsers.length} utilisateur{filteredUsers.length > 1 ? 's' : ''}
+                    {(searchTerm || filterRole !== 'all') && <span className="text-slate-400 font-normal"> (filtré{filteredUsers.length > 1 ? 's' : ''})</span>}
+                  </h2>
+                </div>
+              </div>
 
-        {/* TABLEAU */}
-        <div style={{
-          background: 'white', borderRadius: '12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.08)', overflow: 'hidden'
-        }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-            <thead>
-              <tr style={{ background: '#f0f4f8' }}>
-                <th style={thStyle}>Email</th>
-                <th style={thStyle}>Nom</th>
-                <th style={thStyle}>Prénom</th>
-                <th style={thStyle}>Direction</th>
-                <th style={thStyle}>Rôle</th>
-                <th style={thStyle}>Statut</th>
-                <th style={thStyle}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.length > 0 ? (
-                filteredUsers.map((u) => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={tdStyle}>{u.email}</td>
-                    <td style={tdStyle}>{u.nom}</td>
-                    <td style={tdStyle}>{u.prenom}</td>
-                    <td style={tdStyle}>{u.direction || '—'}</td>
-                    <td style={tdStyle}>
-                      <span style={{
-                        padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.8rem',
-                        background: u.role === 'administrateur' ? '#e3f2fd' :
-                                    u.role === 'gestionnaire' ? '#f3e5f5' : '#e8f5e9',
-                        color: u.role === 'administrateur' ? '#1565c0' :
-                               u.role === 'gestionnaire' ? '#6a1b9a' : '#2e7d32',
-                        fontWeight: '600'
-                      }}>
-                        {u.role}
-                      </span>
-                    </td>
-                    <td style={tdStyle}>
-                      <span style={{
-                        padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.8rem',
-                        background: u.actif ? '#e8f5e9' : '#fce4ec',
-                        color: u.actif ? '#2e7d32' : '#c62828',
-                        fontWeight: '600'
-                      }}>
-                        {u.actif ? '✅ Actif' : '❌ Inactif'}
-                      </span>
-                    </td>
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => handleEdit(u)}
-                        style={{
-                          background: '#1a3c5e', color: 'white', border: 'none',
-                          padding: '0.3rem 0.7rem', borderRadius: '6px',
-                          cursor: 'pointer', fontSize: '0.8rem', marginRight: '0.4rem'
-                        }}
-                      >
-                        ✏️ Modifier
-                      </button>
-                      <button
-                        onClick={() => handleDelete(u.id, u.email)}
-                        style={{
-                          background: '#c62828', color: 'white', border: 'none',
-                          padding: '0.3rem 0.7rem', borderRadius: '6px',
-                          cursor: 'pointer', fontSize: '0.8rem'
-                        }}
-                      >
-                        🗑️ Supprimer
-                      </button>
-                    </td>
-                  </tr>
-                ))
+              {filteredUsers.length === 0 ? (
+                <div className="py-16 flex flex-col items-center gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+                    <Users className="w-7 h-7 text-slate-400" />
+                  </div>
+                  <p className="text-slate-600 font-medium">Aucun utilisateur trouvé</p>
+                  <p className="text-slate-400 text-sm">Modifiez vos critères de recherche</p>
+                </div>
               ) : (
-                <tr>
-                  <td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: '#999', padding: '2rem' }}>
-                    Aucun utilisateur trouvé
-                  </td>
-                </tr>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        {['Utilisateur', 'Direction', 'Rôle', 'Statut', 'Créé le', 'Actions'].map(h => (
+                          <th key={h} className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredUsers.map((u) => (
+                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
+                                <span className="text-white text-sm font-bold">
+                                  {u.prenom?.[0]?.toUpperCase() || u.email?.[0]?.toUpperCase()}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="font-medium text-slate-800 text-sm">{u.prenom} {u.nom}</p>
+                                <p className="text-slate-400 text-xs">{u.email}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{u.direction || '—'}</td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium ${getRoleBadge(u.role)}`}>
+                              <Shield className="w-3 h-3" />
+                              {getRoleLabel(u.role)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {u.actif ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-medium">
+                                <UserCheck className="w-3 h-3" /> Actif
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-medium">
+                                <UserX className="w-3 h-3" /> Inactif
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-500">
+                            {new Date(u.created_at).toLocaleDateString('fr-FR')}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => handleEdit(u)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-medium transition-colors">
+                                <Edit2 className="w-3 h-3" /> Modifier
+                              </button>
+                              <button onClick={() => handleDelete(u.id, u.email)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-medium transition-colors">
+                                <Trash2 className="w-3 h-3" /> Supprimer
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-      </main>
+            </div>
+          </div>
+        </main>
+      </div>
     </div>
   )
 }
-
-const navStyle: any = {
-  color: 'white', textDecoration: 'none', padding: '0.6rem 1rem',
-  borderRadius: '8px', background: 'rgba(255,255,255,0.1)', fontSize: '0.9rem'
-}
-const inputStyle: any = {
-  padding: '0.6rem 0.8rem', borderRadius: '8px',
-  border: '1px solid #ddd', fontSize: '0.9rem', width: '100%'
-}
-const thStyle: any = {
-  padding: '0.8rem 1rem', fontWeight: 'bold',
-  color: '#444', textAlign: 'left'
-}
-const tdStyle: any = { padding: '0.8rem 1rem', color: '#333' }

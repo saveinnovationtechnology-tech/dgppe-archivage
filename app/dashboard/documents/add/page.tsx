@@ -4,14 +4,25 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { logAction } from '@/lib/supabase/logs'
+import {
+  Building2, LayoutDashboard, FilePlus, FolderOpen,
+  Search, Users, ClipboardList, LogOut, ChevronRight,
+  FileText, Upload, X, CheckCircle, AlertCircle,
+  Shield, Calendar, Hash, BookOpen, Briefcase,
+  Menu, Bell
+} from 'lucide-react'
 
 export default function AddDocumentPage() {
   const supabase = createClient()
   const router = useRouter()
+  const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success')
   const [directions, setDirections] = useState<any[]>([])
   const [fichier, setFichier] = useState<File | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [dragOver, setDragOver] = useState(false)
 
   const [form, setForm] = useState({
     intitule: '',
@@ -26,11 +37,14 @@ export default function AddDocumentPage() {
   })
 
   useEffect(() => {
-    const loadDirections = async () => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      setUser(user)
       const { data } = await supabase.from('directions').select('*')
       setDirections(data || [])
     }
-    loadDirections()
+    init()
   }, [])
 
   const handleChange = (e: any) => {
@@ -46,13 +60,21 @@ export default function AddDocumentPage() {
     })
   }
 
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file && file.type === 'application/pdf') setFichier(file)
+  }
+
   const handleSubmit = async (e: any) => {
     e.preventDefault()
     setLoading(true)
     setMessage('')
 
     if (!form.intitule || !form.type_document || !form.direction_origine || !form.auteur_service) {
-      setMessage('❌ Veuillez remplir tous les champs obligatoires.')
+      setMessage('Veuillez remplir tous les champs obligatoires.')
+      setMessageType('error')
       setLoading(false)
       return
     }
@@ -66,31 +88,27 @@ export default function AddDocumentPage() {
 
       if (fichier) {
         if (fichier.type !== 'application/pdf') {
-          setMessage('❌ Seuls les fichiers PDF sont acceptés.')
+          setMessage('Seuls les fichiers PDF sont acceptés.')
+          setMessageType('error')
           setLoading(false)
           return
         }
-
         if (fichier.size > 50 * 1024 * 1024) {
-          setMessage('❌ Le fichier ne doit pas dépasser 50MB.')
+          setMessage('Le fichier ne doit pas dépasser 50MB.')
+          setMessageType('error')
           setLoading(false)
           return
         }
-
         fichier_base64 = await fileToBase64(fichier)
         fichier_nom = fichier.name
         fichier_taille = fichier.size
       }
 
       const { data: newDoc, error } = await supabase.from('documents').insert([{
-        intitule: form.intitule,
-        type_document: form.type_document,
-        direction_origine: form.direction_origine,
+        ...form,
         code_document: form.code_document || null,
         date_document: form.date_document || null,
         reference_administrative: form.reference_administrative || null,
-        auteur_service: form.auteur_service,
-        niveau_confidentialite: form.niveau_confidentialite,
         observations: form.observations || null,
         fichier_base64,
         fichier_nom,
@@ -100,227 +118,401 @@ export default function AddDocumentPage() {
 
       if (error) throw error
 
-      // ✅ LOG création document
       await logAction(
         'creation_document',
         `Création du document : ${form.intitule} (${form.type_document}) — ${form.direction_origine}`,
         newDoc?.id || null
       )
 
-      setMessage('✅ Document enregistré avec succès !')
+      setMessage('Document enregistré avec succès !')
+      setMessageType('success')
       setTimeout(() => router.push('/dashboard'), 2000)
 
     } catch (err: any) {
-      console.error(err)
-      setMessage(`❌ Erreur : ${err.message}`)
+      setMessage(`Erreur : ${err.message}`)
+      setMessageType('error')
     } finally {
       setLoading(false)
     }
   }
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  const navItems = [
+    { href: '/dashboard', icon: LayoutDashboard, label: 'Tableau de bord' },
+    { href: '/dashboard/documents/add', icon: FilePlus, label: 'Ajouter un document', active: true },
+    { href: '/dashboard/documents/view', icon: FolderOpen, label: 'Documents' },
+    { href: '/dashboard/search', icon: Search, label: 'Rechercher' },
+    { href: '/dashboard/users', icon: Users, label: 'Utilisateurs' },
+    { href: '/dashboard/logs', icon: ClipboardList, label: 'Journaux d\'activité' },
+  ]
+
+  const userInitial = user?.email?.charAt(0).toUpperCase() || 'U'
+
+  const confOptions = [
+    { value: 'Normal', label: 'Normal', color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+    { value: 'Interne', label: 'Interne', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+    { value: 'Confidentiel', label: 'Confidentiel', color: 'text-amber-600 bg-amber-50 border-amber-200' },
+    { value: 'Secret', label: 'Secret', color: 'text-red-600 bg-red-50 border-red-200' },
+  ]
+
   return (
-    <div style={{ minHeight: '100vh', background: '#f0f4f8', fontFamily: 'Segoe UI, sans-serif' }}>
+    <div className="flex min-h-screen bg-slate-50 font-sans">
 
-      <header style={{
-        background: 'linear-gradient(135deg, #1a3c5e, #2563a8)',
-        color: 'white', padding: '1rem 2rem',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <span style={{ fontSize: '1.5rem' }}>📁</span>
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>DGPPE</div>
-            <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Gestion Documentaire</div>
+      {/* SIDEBAR */}
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col shadow-2xl z-10`}>
+        <div className="flex items-center gap-3 p-6 border-b border-white/10">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-lg flex-shrink-0">
+            <Building2 className="w-5 h-5 text-white" />
           </div>
+          {sidebarOpen && (
+            <div>
+              <h1 className="text-white font-bold text-sm">DGPPE</h1>
+              <p className="text-slate-400 text-xs">Archivage numérique</p>
+            </div>
+          )}
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="ml-auto text-slate-400 hover:text-white transition-colors">
+            {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
         </div>
-        <nav style={{ display: 'flex', gap: '1rem' }}>
-          <a href="/dashboard" style={navStyle}>🏠 Tableau de bord</a>
-          <a href="/documents/view" style={navStyle}>📄 Documents</a>
+
+        <nav className="flex-1 p-4 space-y-1">
+          {navItems.map((item) => (
+            <a key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${item.active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}>
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
+              {sidebarOpen && item.active && <ChevronRight className="w-4 h-4 ml-auto" />}
+            </a>
+          ))}
         </nav>
-      </header>
 
-      <main style={{ maxWidth: '900px', margin: '2rem auto', padding: '0 1rem' }}>
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h1 style={{ color: '#1a3c5e', fontSize: '1.5rem', margin: 0 }}>➕ Ajouter un document</h1>
-          <p style={{ color: '#666', marginTop: '0.3rem' }}>Remplissez les informations du document à enregistrer</p>
+        <div className="p-4 border-t border-white/10">
+          {sidebarOpen && (
+            <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl bg-white/5">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                {userInitial}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-xs font-medium truncate">{user?.email}</p>
+                <p className="text-slate-400 text-xs">Administrateur</p>
+              </div>
+            </div>
+          )}
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-all duration-200">
+            <LogOut className="w-5 h-5 flex-shrink-0" />
+            {sidebarOpen && <span className="text-sm font-medium">Déconnexion</span>}
+          </button>
         </div>
+      </aside>
 
-        {message && (
-          <div style={{
-            padding: '1rem', borderRadius: '8px', marginBottom: '1rem',
-            background: message.startsWith('✅') ? '#d4edda' : '#f8d7da',
-            color: message.startsWith('✅') ? '#155724' : '#721c24',
-            border: `1px solid ${message.startsWith('✅') ? '#c3e6cb' : '#f5c6cb'}`
-          }}>
-            {message}
+      {/* CONTENU */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+
+        {/* HEADER */}
+        <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shadow-sm">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">Ajouter un document</h2>
+            <p className="text-slate-500 text-sm">Renseignez les informations du nouveau document</p>
           </div>
-        )}
-
-        <form onSubmit={handleSubmit} style={{
-          background: 'white', borderRadius: '12px', padding: '2rem',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.2rem'
-        }}>
-
-          <div style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Intitulé du document *</label>
-            <input
-              name="intitule"
-              value={form.intitule}
-              onChange={handleChange}
-              placeholder="Ex: Rapport annuel 2024"
-              style={inputStyle}
-              required
-            />
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Type de document *</label>
-            <select name="type_document" value={form.type_document} onChange={handleChange} style={inputStyle} required>
-              <option value="">-- Sélectionner --</option>
-              <option value="Rapport">Rapport</option>
-              <option value="Note">Note</option>
-              <option value="Circulaire">Circulaire</option>
-              <option value="Arrêté">Arrêté</option>
-              <option value="Décision">Décision</option>
-              <option value="Procès-verbal">Procès-verbal</option>
-              <option value="Contrat">Contrat</option>
-              <option value="Correspondance">Correspondance</option>
-              <option value="Autre">Autre</option>
-            </select>
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Direction d'origine *</label>
-            <select name="direction_origine" value={form.direction_origine} onChange={handleChange} style={inputStyle} required>
-              <option value="">-- Sélectionner --</option>
-              {directions.map((d) => (
-                <option key={d.id} value={d.nom}>{d.nom}</option>
-              ))}
-            </select>
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Code document</label>
-            <input
-              name="code_document"
-              value={form.code_document}
-              onChange={handleChange}
-              placeholder="Ex: DOC-2024-001"
-              style={inputStyle}
-            />
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Date du document</label>
-            <input
-              name="date_document"
-              type="date"
-              value={form.date_document}
-              onChange={handleChange}
-              style={inputStyle}
-            />
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Référence administrative</label>
-            <input
-              name="reference_administrative"
-              value={form.reference_administrative}
-              onChange={handleChange}
-              placeholder="Ex: REF-2024-XXX"
-              style={inputStyle}
-            />
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Auteur / Service *</label>
-            <input
-              name="auteur_service"
-              value={form.auteur_service}
-              onChange={handleChange}
-              placeholder="Ex: Direction des Études"
-              style={inputStyle}
-              required
-            />
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Niveau de confidentialité</label>
-            <select name="niveau_confidentialite" value={form.niveau_confidentialite} onChange={handleChange} style={inputStyle}>
-              <option value="Normal">🟢 Normal</option>
-              <option value="Confidentiel">🟡 Confidentiel</option>
-              <option value="Secret">🔴 Secret</option>
-            </select>
-          </div>
-
-          <div style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Observations</label>
-            <textarea
-              name="observations"
-              value={form.observations}
-              onChange={handleChange}
-              placeholder="Remarques ou informations complémentaires..."
-              rows={3}
-              style={{ ...inputStyle, resize: 'vertical' }}
-            />
-          </div>
-
-          <div style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Pièce jointe (PDF uniquement, max 50MB)</label>
-            <input
-              type="file"
-              onChange={(e) => setFichier(e.target.files?.[0] || null)}
-              style={inputStyle}
-              accept="application/pdf"
-            />
-            {fichier && (
-              <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                📎 {fichier.name} ({(fichier.size / 1024 / 1024).toFixed(2)} MB)
-              </span>
-            )}
-          </div>
-
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '1rem' }}>
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                background: loading ? '#aaa' : '#1a3c5e',
-                color: 'white', border: 'none',
-                padding: '0.8rem 2rem', borderRadius: '8px', cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '1rem'
-              }}
-            >
-              {loading ? '⏳ Enregistrement...' : '💾 Enregistrer le document'}
+          <div className="flex items-center gap-3">
+            <button className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+              <Bell className="w-5 h-5 text-slate-600" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full"></span>
             </button>
-            <button
-              type="button"
-              onClick={() => router.push('/dashboard')}
-              style={{
-                background: '#eee', border: 'none', padding: '0.8rem 2rem',
-                borderRadius: '8px', cursor: 'pointer', fontSize: '1rem'
-              }}
-            >
-              Annuler
-            </button>
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold">
+              {userInitial}
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto p-8">
+
+          {/* Bannière */}
+          <div className="relative bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-6 mb-8 overflow-hidden shadow-xl">
+            <div className="absolute inset-0 opacity-10">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2"></div>
+            </div>
+            <div className="relative z-10">
+              <p className="text-blue-200 text-sm font-medium mb-1">Gestion documentaire</p>
+              <h3 className="text-white text-2xl font-bold mb-2">Nouveau document</h3>
+              <p className="text-blue-200 text-sm">Complétez le formulaire ci-dessous pour enregistrer un document dans la base.</p>
+            </div>
+            <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-20">
+              <FilePlus className="w-24 h-24 text-white" />
+            </div>
           </div>
 
-        </form>
-      </main>
+          {/* Message */}
+          {message && (
+            <div className={`flex items-center gap-3 p-4 rounded-xl mb-6 border ${messageType === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+              {messageType === 'success'
+                ? <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                : <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+              }
+              <span className="text-sm font-medium">{message}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+
+            {/* Section Identification */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-blue-600" />
+                </div>
+                <h3 className="font-semibold text-slate-800">Identification du document</h3>
+              </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                {/* Intitulé */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Intitulé du document <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    name="intitule"
+                    value={form.intitule}
+                    onChange={handleChange}
+                    placeholder="Ex : Rapport annuel d'activités 2024"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-800 placeholder-slate-400"
+                    required
+                  />
+                </div>
+
+                {/* Type */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Type de document <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    name="type_document"
+                    value={form.type_document}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-800"
+                    required
+                  >
+                    <option value="">-- Sélectionner un type --</option>
+                    {['Rapport', 'Note', 'Circulaire', 'Arrêté', 'Décision', 'Procès-verbal', 'Contrat', 'Correspondance', 'Autre'].map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Direction */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Direction d'origine <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    name="direction_origine"
+                    value={form.direction_origine}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-800"
+                    required
+                  >
+                    <option value="">-- Sélectionner une direction --</option>
+                    {directions.map((d) => (
+                      <option key={d.id} value={d.nom}>{d.nom}</option>
+                    ))}
+                  </select>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Section Références */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50">
+                <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                  <Hash className="w-4 h-4 text-purple-600" />
+                </div>
+                <h3 className="font-semibold text-slate-800">Références & Dates</h3>
+              </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Code document</label>
+                  <input
+                    name="code_document"
+                    value={form.code_document}
+                    onChange={handleChange}
+                    placeholder="Ex : DOC-2024-001"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-800 placeholder-slate-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Date du document</label>
+                  <input
+                    name="date_document"
+                    type="date"
+                    value={form.date_document}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Référence administrative</label>
+                  <input
+                    name="reference_administrative"
+                    value={form.reference_administrative}
+                    onChange={handleChange}
+                    placeholder="Ex : REF-2024-XXX"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-800 placeholder-slate-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Auteur / Service <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    name="auteur_service"
+                    value={form.auteur_service}
+                    onChange={handleChange}
+                    placeholder="Ex : Direction des Études"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-800 placeholder-slate-400"
+                    required
+                  />
+                </div>
+
+              </div>
+            </div>
+
+            {/* Section Confidentialité */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                  <Shield className="w-4 h-4 text-amber-600" />
+                </div>
+                <h3 className="font-semibold text-slate-800">Confidentialité & Observations</h3>
+              </div>
+              <div className="p-6 space-y-5">
+
+                {/* Niveau conf — boutons visuels */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-3">Niveau de confidentialité</label>
+                  <div className="flex gap-3 flex-wrap">
+                    {confOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setForm({ ...form, niveau_confidentialite: opt.value })}
+                        className={`px-4 py-2 rounded-xl border text-sm font-medium transition-all ${form.niveau_confidentialite === opt.value ? opt.color + ' border-current shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                      >
+                        <Shield className="w-3.5 h-3.5 inline mr-1.5" />
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Observations */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Observations</label>
+                  <textarea
+                    name="observations"
+                    value={form.observations}
+                    onChange={handleChange}
+                    placeholder="Remarques ou informations complémentaires..."
+                    rows={4}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm text-slate-800 placeholder-slate-400 resize-none"
+                  />
+                </div>
+
+              </div>
+            </div>
+
+            {/* Section Fichier */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                  <Upload className="w-4 h-4 text-emerald-600" />
+                </div>
+                <h3 className="font-semibold text-slate-800">Pièce jointe</h3>
+              </div>
+              <div className="p-6">
+                {!fichier ? (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={handleFileDrop}
+                    className={`border-2 border-dashed rounded-xl p-10 text-center transition-all ${dragOver ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'}`}
+                  >
+                    <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                      <Upload className="w-7 h-7 text-slate-400" />
+                    </div>
+                    <p className="text-slate-700 font-semibold mb-1">Glissez votre PDF ici</p>
+                    <p className="text-slate-400 text-sm mb-4">ou cliquez pour parcourir vos fichiers</p>
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">
+                      <FolderOpen className="w-4 h-4" />
+                      Choisir un fichier
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={(e) => setFichier(e.target.files?.[0] || null)}
+                      />
+                    </label>
+                    <p className="text-slate-400 text-xs mt-3">PDF uniquement · Max 50MB</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-6 h-6 text-red-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{fichier.name}</p>
+                      <p className="text-xs text-slate-500">{(fichier.size / 1024 / 1024).toFixed(2)} MB · PDF</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFichier(null)}
+                      className="p-2 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Boutons */}
+            <div className="flex items-center gap-4">
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold text-sm shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-blue-800 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    Enregistrement...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Enregistrer le document
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard')}
+                className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+
+          </form>
+        </main>
+      </div>
     </div>
   )
-}
-
-const navStyle: any = {
-  color: 'white', textDecoration: 'none', padding: '0.6rem 1rem',
-  borderRadius: '8px', background: 'rgba(255,255,255,0.1)', fontSize: '0.9rem'
-}
-const fieldStyle: any = { display: 'flex', flexDirection: 'column', gap: '0.3rem' }
-const labelStyle: any = { fontWeight: 'bold', fontSize: '0.85rem', color: '#444' }
-const inputStyle: any = {
-  padding: '0.6rem', borderRadius: '6px', border: '1px solid #ddd',
-  fontSize: '0.9rem', width: '100%', boxSizing: 'border-box'
 }
