@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { logAction } from '@/lib/supabase/logs'
 
 export default function DocumentsPage() {
   const [user, setUser] = useState<any>(null)
@@ -19,7 +20,6 @@ export default function DocumentsPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Corrige le double préfixe base64
   const getPdfSrc = (base64: string) => {
     if (!base64) return ''
     return base64.startsWith('data:') ? base64 : `data:application/pdf;base64,${base64}`
@@ -72,6 +72,25 @@ export default function DocumentsPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  // ✅ Ouvrir le PDF + logger consultation
+  const handleVoirDoc = async (doc: any) => {
+    setSelectedDoc(doc)
+    await logAction(
+      'consultation',
+      `Consultation du document : ${doc.intitule} (${doc.niveau_confidentialite})`,
+      doc.id
+    )
+  }
+
+  // ✅ Logger téléchargement
+  const handleTelechargement = async (doc: any) => {
+    await logAction(
+      'telechargement',
+      `Téléchargement du document : ${doc.intitule} (${doc.niveau_confidentialite})`,
+      doc.id
+    )
   }
 
   const getDirectionNom = (direction_id: string) => {
@@ -201,7 +220,7 @@ export default function DocumentsPage() {
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         {doc.fichier_base64 && (
                           <button
-                            onClick={() => setSelectedDoc(doc)}
+                            onClick={() => handleVoirDoc(doc)}
                             style={btnStyle('#1a3c5e')}
                           >👁️ Voir</button>
                         )}
@@ -209,6 +228,7 @@ export default function DocumentsPage() {
                           <a
                             href={getPdfSrc(doc.fichier_base64)}
                             download={`${doc.intitule}.pdf`}
+                            onClick={() => handleTelechargement(doc)}
                             style={{ ...btnStyle('#2d6a2d'), textDecoration: 'none' }}
                           >⬇️ PDF</a>
                         )}
@@ -251,6 +271,7 @@ export default function DocumentsPage() {
                 <a
                   href={getPdfSrc(selectedDoc.fichier_base64)}
                   download={`${selectedDoc.intitule}.pdf`}
+                  onClick={() => handleTelechargement(selectedDoc)}
                   style={{ ...btnStyle('#2d6a2d'), textDecoration: 'none' }}
                 >⬇️ Télécharger</a>
                 <button onClick={() => setSelectedDoc(null)} style={btnStyle('#c00')}>✕ Fermer</button>

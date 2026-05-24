@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { logAction } from '@/lib/supabase/logs'
 
 export default function AddDocumentPage() {
   const supabase = createClient()
@@ -81,7 +82,7 @@ export default function AddDocumentPage() {
         fichier_taille = fichier.size
       }
 
-      const { error } = await supabase.from('documents').insert([{
+      const { data: newDoc, error } = await supabase.from('documents').insert([{
         intitule: form.intitule,
         type_document: form.type_document,
         direction_origine: form.direction_origine,
@@ -95,9 +96,16 @@ export default function AddDocumentPage() {
         fichier_nom,
         fichier_taille,
         created_by: user?.id || null,
-      }])
+      }]).select().single()
 
       if (error) throw error
+
+      // ✅ LOG création document
+      await logAction(
+        'creation_document',
+        `Création du document : ${form.intitule} (${form.type_document}) — ${form.direction_origine}`,
+        newDoc?.id || null
+      )
 
       setMessage('✅ Document enregistré avec succès !')
       setTimeout(() => router.push('/dashboard'), 2000)
@@ -239,7 +247,6 @@ export default function AddDocumentPage() {
             />
           </div>
 
-          {/* ✅ Options alignées avec le nouveau check constraint */}
           <div style={fieldStyle}>
             <label style={labelStyle}>Niveau de confidentialité</label>
             <select name="niveau_confidentialite" value={form.niveau_confidentialite} onChange={handleChange} style={inputStyle}>

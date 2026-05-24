@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { logAction } from '@/lib/supabase/logs'
 import styles from './login.module.css'
 
 export default function LoginPage() {
@@ -28,6 +29,8 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
+
+    await logAction('connexion', `Connexion de ${email}`)
 
     router.push('/dashboard')
   }
