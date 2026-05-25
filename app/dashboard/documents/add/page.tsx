@@ -4,12 +4,13 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { logAction } from '@/lib/supabase/logs'
+import { getNonLues, marquerToutesLues, marquerCommeLue } from '@/lib/supabase/notifications'
 import {
   Building2, LayoutDashboard, FilePlus, FolderOpen,
   Search, Users, ClipboardList, LogOut, ChevronRight,
   FileText, Upload, X, CheckCircle, AlertCircle,
   Shield, Calendar, Hash, BookOpen, Briefcase,
-  Menu, Bell
+  Menu, Bell, User
 } from 'lucide-react'
 
 export default function AddDocumentPage() {
@@ -23,6 +24,9 @@ export default function AddDocumentPage() {
   const [fichier, setFichier] = useState<File | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [dragOver, setDragOver] = useState(false)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notifLoading, setNotifLoading] = useState(false)
 
   const [form, setForm] = useState({
     intitule: '',
@@ -41,8 +45,12 @@ export default function AddDocumentPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setUser(user)
+
       const { data } = await supabase.from('directions').select('*')
       setDirections(data || [])
+
+      const notifs = await getNonLues(user.id)
+      setNotifications(notifs)
     }
     init()
   }, [])
@@ -141,6 +149,14 @@ export default function AddDocumentPage() {
     router.push('/login')
   }
 
+  const handleMarquerToutesLues = async () => {
+    if (!user) return
+    setNotifLoading(true)
+    await marquerToutesLues(user.id)
+    setNotifications([])
+    setNotifLoading(false)
+  }
+
   const navItems = [
     { href: '/dashboard', icon: LayoutDashboard, label: 'Tableau de bord' },
     { href: '/dashboard/documents/add', icon: FilePlus, label: 'Ajouter un document', active: true },
@@ -154,7 +170,6 @@ export default function AddDocumentPage() {
 
   const confOptions = [
     { value: 'Normal', label: 'Normal', color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-    { value: 'Interne', label: 'Interne', color: 'text-blue-600 bg-blue-50 border-blue-200' },
     { value: 'Confidentiel', label: 'Confidentiel', color: 'text-amber-600 bg-amber-50 border-amber-200' },
     { value: 'Secret', label: 'Secret', color: 'text-red-600 bg-red-50 border-red-200' },
   ]
@@ -181,7 +196,8 @@ export default function AddDocumentPage() {
 
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => (
-            <a key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${item.active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}>
+            <a key={item.href} href={item.href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${item.active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}>
               <item.icon className="w-5 h-5 flex-shrink-0" />
               {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
               {sidebarOpen && item.active && <ChevronRight className="w-4 h-4 ml-auto" />}
@@ -217,14 +233,93 @@ export default function AddDocumentPage() {
             <h2 className="text-xl font-bold text-slate-800">Ajouter un document</h2>
             <p className="text-slate-500 text-sm">Renseignez les informations du nouveau document</p>
           </div>
+
           <div className="flex items-center gap-3">
-            <button className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
-              <Bell className="w-5 h-5 text-slate-600" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full"></span>
-            </button>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold">
-              {userInitial}
+
+            {/* NOTIFICATIONS */}
+            <div className="relative">
+              <button
+                onClick={() => setNotifOpen(!notifOpen)}
+                className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                <Bell className="w-5 h-5 text-slate-600" />
+                {notifications.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                    {notifications.length > 9 ? '9+' : notifications.length}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setNotifOpen(false)} />
+                  <div className="absolute right-0 top-12 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 z-20 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                      <h4 className="font-semibold text-slate-800 text-sm">Notifications</h4>
+                      {notifications.length > 0 && (
+                        <button
+                          onClick={handleMarquerToutesLues}
+                          disabled={notifLoading}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                        >
+                          Tout marquer comme lu
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                          <Bell className="w-8 h-8 mb-2 opacity-40" />
+                          <p className="text-sm">Aucune notification</p>
+                        </div>
+                      ) : (
+                        notifications.map((notif) => (
+                          <div
+                            key={notif.id}
+                            onClick={async () => {
+                              await marquerCommeLue(notif.id)
+                              setNotifications(prev => prev.filter(n => n.id !== notif.id))
+                            }}
+                            className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${
+                              notif.type === 'warning' ? 'border-l-4 border-l-amber-400' :
+                              notif.type === 'error' ? 'border-l-4 border-l-red-400' :
+                              'border-l-4 border-l-blue-400'
+                            }`}
+                          >
+                            <p className="text-sm font-semibold text-slate-800">{notif.titre}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{notif.message}</p>
+                            <p className="text-xs text-slate-400 mt-1">
+                              {new Date(notif.created_at).toLocaleDateString('fr-FR', {
+                                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {notifications.length > 0 && (
+                      <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
+                        <p className="text-xs text-slate-400 text-center">
+                          {notifications.length} notification{notifications.length > 1 ? 's' : ''} non lue{notifications.length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* PROFIL */}
+            <button
+              onClick={() => router.push('/dashboard/profile')}
+              className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold hover:shadow-lg hover:scale-105 transition-all"
+              title="Mon profil"
+            >
+              {userInitial}
+            </button>
+
           </div>
         </header>
 
@@ -268,7 +363,6 @@ export default function AddDocumentPage() {
               </div>
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
 
-                {/* Intitulé */}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                     Intitulé du document <span className="text-red-500">*</span>
@@ -283,7 +377,6 @@ export default function AddDocumentPage() {
                   />
                 </div>
 
-                {/* Type */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                     Type de document <span className="text-red-500">*</span>
@@ -302,7 +395,6 @@ export default function AddDocumentPage() {
                   </select>
                 </div>
 
-                {/* Direction */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                     Direction d'origine <span className="text-red-500">*</span>
@@ -394,7 +486,6 @@ export default function AddDocumentPage() {
               </div>
               <div className="p-6 space-y-5">
 
-                {/* Niveau conf — boutons visuels */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-3">Niveau de confidentialité</label>
                   <div className="flex gap-3 flex-wrap">
@@ -412,7 +503,6 @@ export default function AddDocumentPage() {
                   </div>
                 </div>
 
-                {/* Observations */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Observations</label>
                   <textarea

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { getNonLues, marquerToutesLues, marquerCommeLue } from '@/lib/supabase/notifications'
 import {
   Building2, LayoutDashboard, FilePlus, FolderOpen,
   Search, Users, ClipboardList, LogOut, ChevronRight,
@@ -57,6 +58,9 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notifLoading, setNotifLoading] = useState(false)
   const [stats, setStats] = useState<Stats>({
     totalLogs: 0, connexions: 0, consultations: 0, modifications: 0, suppressions: 0
   })
@@ -79,6 +83,9 @@ export default function LogsPage() {
 
         await loadUsers()
         await loadLogs()
+
+        const notifs = await getNonLues(authUser.id)
+        setNotifications(notifs)
       } catch (error) {
         console.error('Erreur:', error)
       }
@@ -161,6 +168,14 @@ export default function LogsPage() {
     router.push('/login')
   }
 
+  const handleMarquerToutesLues = async () => {
+    if (!user) return
+    setNotifLoading(true)
+    await marquerToutesLues(user.id)
+    setNotifications([])
+    setNotifLoading(false)
+  }
+
   const getActionConfig = (action: string) => {
     const config: Record<string, { icon: any; color: string; bg: string; label: string }> = {
       connexion: { icon: LogIn, color: 'text-emerald-700', bg: 'bg-emerald-100 border-emerald-200', label: 'Connexion' },
@@ -194,6 +209,8 @@ export default function LogsPage() {
     { label: 'Suppressions', value: stats.suppressions, icon: Trash2, color: 'from-red-500 to-red-600' },
   ]
 
+  const userInitial = userEmail?.[0]?.toUpperCase() || 'U'
+
   if (!user) return (
     <div className="flex h-screen items-center justify-center bg-slate-100">
       <div className="flex flex-col items-center gap-3">
@@ -206,7 +223,7 @@ export default function LogsPage() {
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
 
-      {/* Sidebar */}
+      {/* SIDEBAR */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 bg-gradient-to-b from-slate-800 to-slate-900 flex flex-col overflow-hidden shrink-0`}>
         <div className="p-5 border-b border-slate-700">
           <div className="flex items-center gap-3">
@@ -224,7 +241,7 @@ export default function LogsPage() {
           {navItems.map((item) => (
             <a key={item.href} href={item.href}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
-                ${item.active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}>
+                ${(item as any).active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}>
               <item.icon className="w-4 h-4 shrink-0" />
               {item.label}
             </a>
@@ -243,10 +260,10 @@ export default function LogsPage() {
         </div>
       </aside>
 
-      {/* Main */}
+      {/* MAIN */}
       <div className="flex-1 flex flex-col overflow-hidden">
 
-        {/* Header */}
+        {/* HEADER */}
         <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
             <button onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -259,20 +276,97 @@ export default function LogsPage() {
               <span className="text-slate-800 font-semibold">Journaux d'activité</span>
             </div>
           </div>
+
           <div className="flex items-center gap-3">
-            <button className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
-              <Bell className="w-5 h-5 text-slate-600" />
-            </button>
-            <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                <span className="text-white text-xs font-bold">{userEmail?.[0]?.toUpperCase() || 'U'}</span>
-              </div>
-              <span className="text-sm font-medium text-slate-700 hidden md:block">{userEmail}</span>
+
+            {/* NOTIFICATIONS */}
+            <div className="relative">
+              <button
+                onClick={() => setNotifOpen(!notifOpen)}
+                className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                <Bell className="w-5 h-5 text-slate-600" />
+                {notifications.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                    {notifications.length > 9 ? '9+' : notifications.length}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setNotifOpen(false)} />
+                  <div className="absolute right-0 top-12 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 z-20 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                      <h4 className="font-semibold text-slate-800 text-sm">Notifications</h4>
+                      {notifications.length > 0 && (
+                        <button
+                          onClick={handleMarquerToutesLues}
+                          disabled={notifLoading}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                        >
+                          Tout marquer comme lu
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                          <Bell className="w-8 h-8 mb-2 opacity-40" />
+                          <p className="text-sm">Aucune notification</p>
+                        </div>
+                      ) : (
+                        notifications.map((notif) => (
+                          <div
+                            key={notif.id}
+                            onClick={async () => {
+                              await marquerCommeLue(notif.id)
+                              setNotifications(prev => prev.filter(n => n.id !== notif.id))
+                            }}
+                            className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${
+                              notif.type === 'warning' ? 'border-l-4 border-l-amber-400' :
+                              notif.type === 'error' ? 'border-l-4 border-l-red-400' :
+                              'border-l-4 border-l-blue-400'
+                            }`}
+                          >
+                            <p className="text-sm font-semibold text-slate-800">{notif.titre}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{notif.message}</p>
+                            <p className="text-xs text-slate-400 mt-1">
+                              {new Date(notif.created_at).toLocaleDateString('fr-FR', {
+                                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {notifications.length > 0 && (
+                      <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
+                        <p className="text-xs text-slate-400 text-center">
+                          {notifications.length} notification{notifications.length > 1 ? 's' : ''} non lue{notifications.length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* PROFIL */}
+            <button
+              onClick={() => router.push('/dashboard/profile')}
+              className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold hover:shadow-lg hover:scale-105 transition-all"
+              title="Mon profil"
+            >
+              {userInitial}
+            </button>
+
           </div>
         </header>
 
-        {/* Content */}
+        {/* CONTENT */}
         <main className="flex-1 overflow-y-auto">
 
           {/* Banner */}
@@ -470,7 +564,7 @@ export default function LogsPage() {
         </main>
       </div>
 
-      {/* Modal */}
+      {/* MODAL DÉTAILS LOG */}
       {selectedLog && (() => {
         const cfg = getActionConfig(selectedLog.action)
         const ActionIcon = cfg.icon

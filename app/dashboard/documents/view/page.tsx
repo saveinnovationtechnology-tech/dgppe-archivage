@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { logAction } from '@/lib/supabase/logs'
+import { getNonLues, marquerToutesLues, marquerCommeLue } from '@/lib/supabase/notifications'
 import {
   Building2, LayoutDashboard, FilePlus, FolderOpen,
   Search, Users, ClipboardList, LogOut, ChevronRight,
@@ -20,6 +21,9 @@ export default function DocumentsPage() {
   const [selectedDoc, setSelectedDoc] = useState<any>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [showFilters, setShowFilters] = useState(true)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notifLoading, setNotifLoading] = useState(false)
   const [filters, setFilters] = useState({
     search: '', type: '', direction: '', confidentialite: '',
   })
@@ -39,6 +43,8 @@ export default function DocumentsPage() {
       const { data: dirs } = await supabase.from('directions').select('*').order('nom')
       setDirections(dirs || [])
       await fetchDocuments({ search: '', type: '', direction: '', confidentialite: '' })
+      const notifs = await getNonLues(user.id)
+      setNotifications(notifs)
     }
     init()
   }, [])
@@ -73,6 +79,14 @@ export default function DocumentsPage() {
 
   const handleTelechargement = async (doc: any) => {
     await logAction('telechargement', `Téléchargement du document : ${doc.intitule} (${doc.niveau_confidentialite})`, doc.id)
+  }
+
+  const handleMarquerToutesLues = async () => {
+    if (!user) return
+    setNotifLoading(true)
+    await marquerToutesLues(user.id)
+    setNotifications([])
+    setNotifLoading(false)
   }
 
   const getDirectionNom = (direction_id: string) => {
@@ -172,18 +186,102 @@ export default function DocumentsPage() {
               {loading ? 'Chargement...' : `${documents.length} document(s) trouvé(s)`}
             </p>
           </div>
+
           <div className="flex items-center gap-3">
-            <button className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
-              <Bell className="w-5 h-5 text-slate-600" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full"></span>
-            </button>
-            <a href="/dashboard/documents/add" className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl text-sm font-semibold shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-blue-800 transition-all">
+
+            {/* NOTIFICATIONS */}
+            <div className="relative">
+              <button
+                onClick={() => setNotifOpen(!notifOpen)}
+                className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                <Bell className="w-5 h-5 text-slate-600" />
+                {notifications.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                    {notifications.length > 9 ? '9+' : notifications.length}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setNotifOpen(false)} />
+                  <div className="absolute right-0 top-12 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 z-20 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                      <h4 className="font-semibold text-slate-800 text-sm">Notifications</h4>
+                      {notifications.length > 0 && (
+                        <button
+                          onClick={handleMarquerToutesLues}
+                          disabled={notifLoading}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                        >
+                          Tout marquer comme lu
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                          <Bell className="w-8 h-8 mb-2 opacity-40" />
+                          <p className="text-sm">Aucune notification</p>
+                        </div>
+                      ) : (
+                        notifications.map((notif) => (
+                          <div
+                            key={notif.id}
+                            onClick={async () => {
+                              await marquerCommeLue(notif.id)
+                              setNotifications(prev => prev.filter(n => n.id !== notif.id))
+                            }}
+                            className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${
+                              notif.type === 'warning' ? 'border-l-4 border-l-amber-400' :
+                              notif.type === 'error' ? 'border-l-4 border-l-red-400' :
+                              'border-l-4 border-l-blue-400'
+                            }`}
+                          >
+                            <p className="text-sm font-semibold text-slate-800">{notif.titre}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{notif.message}</p>
+                            <p className="text-xs text-slate-400 mt-1">
+                              {new Date(notif.created_at).toLocaleDateString('fr-FR', {
+                                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {notifications.length > 0 && (
+                      <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
+                        <p className="text-xs text-slate-400 text-center">
+                          {notifications.length} notification{notifications.length > 1 ? 's' : ''} non lue{notifications.length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* BOUTON AJOUTER */}
+            <a
+              href="/dashboard/documents/add"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl text-sm font-semibold shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-blue-800 transition-all"
+            >
               <Plus className="w-4 h-4" />
               Ajouter
             </a>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold">
+
+            {/* PROFIL */}
+            <button
+              onClick={() => router.push('/dashboard/profile')}
+              className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold hover:shadow-lg hover:scale-105 transition-all"
+              title="Mon profil"
+            >
               {userInitial}
-            </div>
+            </button>
+
           </div>
         </header>
 
@@ -229,7 +327,6 @@ export default function DocumentsPage() {
 
             {showFilters && (
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Recherche */}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
@@ -240,7 +337,6 @@ export default function DocumentsPage() {
                   />
                 </div>
 
-                {/* Type */}
                 <select
                   value={filters.type}
                   onChange={e => handleFilterChange('type', e.target.value)}
@@ -252,7 +348,6 @@ export default function DocumentsPage() {
                   ))}
                 </select>
 
-                {/* Direction */}
                 <select
                   value={filters.direction}
                   onChange={e => handleFilterChange('direction', e.target.value)}
@@ -264,14 +359,13 @@ export default function DocumentsPage() {
                   ))}
                 </select>
 
-                {/* Confidentialité */}
                 <select
                   value={filters.confidentialite}
                   onChange={e => handleFilterChange('confidentialite', e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none text-sm text-slate-800 transition-all"
                 >
                   <option value="">Toutes confidentialités</option>
-                  {['Normal', 'Interne', 'Confidentiel', 'Secret'].map(c => (
+                  {['Normal', 'Confidentiel', 'Secret'].map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -376,8 +470,6 @@ export default function DocumentsPage() {
       {selectedDoc && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-
-            {/* Header modal */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
@@ -413,8 +505,6 @@ export default function DocumentsPage() {
                 </button>
               </div>
             </div>
-
-            {/* Iframe PDF */}
             <iframe
               src={getPdfSrc(selectedDoc.fichier_base64)}
               className="flex-1 w-full border-none"

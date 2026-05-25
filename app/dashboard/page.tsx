@@ -1,20 +1,29 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard, FilePlus, FolderOpen, Search,
   Users, ClipboardList, LogOut, FileText, Bell,
   TrendingUp, Calendar, Shield, ChevronRight,
-  Building2, Menu, X
+  Building2, Menu, X, User, CheckCheck, AlertTriangle, Info
 } from 'lucide-react'
+import {
+  getNonLues, getToutesNotifications,
+  marquerCommeLue, marquerToutesLues,
+  verifierNotificationsAuto
+} from '@/lib/supabase/notifications'
 
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null)
+  const [profil, setProfil] = useState<any>(null)
   const [stats, setStats] = useState({ totalDocs: 0, totalUsers: 0, ceMois: 0 })
   const [derniersDocs, setDerniersDocs] = useState<any[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -24,18 +33,31 @@ export default function DashboardPage() {
       if (!user) { router.push('/login'); return }
       setUser(user)
 
+      // Charger profil
+      const { data: profilData } = await supabase
+        .from('profils')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      setProfil(profilData)
+
+      // Vérifier notifications auto
+      await verifierNotificationsAuto(user.id, profilData)
+
+      // Charger notifications
+      const notifs = await getToutesNotifications(user.id)
+      setNotifications(notifs)
+
+      // Stats
       const { count: totalDocs } = await supabase
         .from('documents').select('*', { count: 'exact', head: true })
-
       const { count: totalUsers } = await supabase
         .from('profils').select('*', { count: 'exact', head: true })
-
       const debut = new Date()
       debut.setDate(1); debut.setHours(0, 0, 0, 0)
       const { count: ceMois } = await supabase
         .from('documents').select('*', { count: 'exact', head: true })
         .gte('created_at', debut.toISOString())
-
       const { data: docs } = await supabase
         .from('documents')
         .select('id, intitule, type_document, created_at, niveau_confidentialite')
@@ -48,10 +70,36 @@ export default function DashboardPage() {
     init()
   }, [])
 
+  // Fermer dropdown notif en cliquant ailleurs
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  const handleMarquerLue = async (notifId: string) => {
+    await marquerCommeLue(notifId)
+    setNotifications(prev =>
+      prev.map(n => n.id === notifId ? { ...n, lue: true } : n)
+    )
+  }
+
+  const handleToutesLues = async () => {
+    if (!user) return
+    await marquerToutesLues(user.id)
+    setNotifications(prev => prev.map(n => ({ ...n, lue: true })))
+  }
+
+  const nonLues = notifications.filter(n => !n.lue).length
 
   const navItems = [
     { href: '/dashboard', icon: LayoutDashboard, label: 'Tableau de bord', active: true },
@@ -72,7 +120,16 @@ export default function DashboardPage() {
     return map[niveau] || 'bg-gray-100 text-gray-600'
   }
 
-  const userInitial = user?.email?.charAt(0).toUpperCase() || 'U'
+  const getNotifIcon = (type: string) => {
+    if (type === 'warning') return <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+    if (type === 'success') return <CheckCheck className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+    return <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
+  }
+
+  const userInitial = (profil?.prenom || user?.email)?.charAt(0).toUpperCase() || 'U'
+  const displayName = profil?.prenom && profil?.nom
+    ? `${profil.prenom} ${profil.nom}`
+    : user?.email
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
@@ -84,8 +141,6 @@ export default function DashboardPage() {
         bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900
         flex flex-col shadow-2xl relative z-10
       `}>
-        
-        {/* Logo */}
         <div className="flex items-center gap-3 p-6 border-b border-white/10">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-lg flex-shrink-0">
             <Building2 className="w-5 h-5 text-white" />
@@ -104,7 +159,6 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => (
             <a
@@ -119,17 +173,12 @@ export default function DashboardPage() {
               `}
             >
               <item.icon className="w-5 h-5 flex-shrink-0" />
-              {sidebarOpen && (
-                <span className="text-sm font-medium">{item.label}</span>
-              )}
-              {sidebarOpen && item.active && (
-                <ChevronRight className="w-4 h-4 ml-auto" />
-              )}
+              {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
+              {sidebarOpen && item.active && <ChevronRight className="w-4 h-4 ml-auto" />}
             </a>
           ))}
         </nav>
 
-        {/* User + Logout */}
         <div className="p-4 border-t border-white/10">
           {sidebarOpen && (
             <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl bg-white/5">
@@ -137,8 +186,8 @@ export default function DashboardPage() {
                 {userInitial}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-medium truncate">{user?.email}</p>
-                <p className="text-slate-400 text-xs">Administrateur</p>
+                <p className="text-white text-xs font-medium truncate">{displayName}</p>
+                <p className="text-slate-400 text-xs">{profil?.role || 'Utilisateur'}</p>
               </div>
             </div>
           )}
@@ -164,20 +213,103 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
-              <Bell className="w-5 h-5 text-slate-600" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full"></span>
-            </button>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold">
-              {userInitial}
+
+            {/* NOTIFICATION DROPDOWN */}
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setNotifOpen(!notifOpen)}
+                className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                <Bell className="w-5 h-5 text-slate-600" />
+                {nonLues > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center font-bold">
+                    {nonLues > 9 ? '9+' : nonLues}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 top-12 w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <h3 className="font-semibold text-slate-800">Notifications</h3>
+                    {nonLues > 0 && (
+                      <button
+                        onClick={handleToutesLues}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        Tout marquer lu
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="flex flex-col items-center py-8 text-slate-400">
+                        <Bell className="w-8 h-8 mb-2 opacity-40" />
+                        <p className="text-sm">Aucune notification</p>
+                      </div>
+                    ) : (
+                      notifications.map(notif => (
+                        <div
+                          key={notif.id}
+                          className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${!notif.lue ? 'bg-blue-50/50' : ''}`}
+                          onClick={() => !notif.lue && handleMarquerLue(notif.id)}
+                        >
+                          <div className="flex items-start gap-3">
+                            {getNotifIcon(notif.type)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className={`text-sm font-medium text-slate-800 ${!notif.lue ? 'font-semibold' : ''}`}>
+                                  {notif.titre}
+                                </p>
+                                {!notif.lue && (
+                                  <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1" />
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{notif.message}</p>
+                              <p className="text-xs text-slate-400 mt-1">
+                                {new Date(notif.created_at).toLocaleDateString('fr-FR', {
+                                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                          {notif.titre.toLowerCase().includes('mot de passe') && !notif.lue && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                router.push('/dashboard/profile')
+                              }}
+                              className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              → Modifier mon mot de passe
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="px-4 py-2 border-t border-slate-100 text-center">
+                    <span className="text-xs text-slate-400">{notifications.length} notification(s)</span>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* PROFIL CLIQUABLE */}
+            <button
+              onClick={() => router.push('/dashboard/profile')}
+              className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold hover:opacity-90 hover:scale-105 transition-all duration-200 shadow-md"
+              title="Mon profil"
+            >
+              {userInitial}
+            </button>
+
           </div>
         </header>
 
-        {/* MAIN */}
+        {/* MAIN - identique à avant */}
         <main className="flex-1 overflow-y-auto p-8">
-
-          {/* Bannière de bienvenue */}
           <div className="relative bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-6 mb-8 overflow-hidden shadow-xl">
             <div className="absolute inset-0 opacity-10">
               <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2"></div>
@@ -185,7 +317,7 @@ export default function DashboardPage() {
             </div>
             <div className="relative z-10">
               <p className="text-blue-200 text-sm font-medium mb-1">Bienvenue 👋</p>
-              <h3 className="text-white text-2xl font-bold mb-2">{user?.email}</h3>
+              <h3 className="text-white text-2xl font-bold mb-2">{displayName}</h3>
               <p className="text-blue-200 text-sm max-w-md">
                 Gérez vos documents administratifs en toute sécurité. Plateforme d'archivage numérique DGPPE.
               </p>
@@ -195,38 +327,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* CARTES STATS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <StatCard
-              title="Total Documents"
-              value={stats.totalDocs}
-              icon={<FolderOpen className="w-6 h-6" />}
-              gradient="from-blue-500 to-blue-600"
-              bg="bg-blue-50"
-              iconColor="text-blue-600"
-              trend="+12% ce mois"
-            />
-            <StatCard
-              title="Utilisateurs"
-              value={stats.totalUsers}
-              icon={<Users className="w-6 h-6" />}
-              gradient="from-purple-500 to-purple-600"
-              bg="bg-purple-50"
-              iconColor="text-purple-600"
-              trend="Actifs"
-            />
-            <StatCard
-              title="Ajouts ce mois"
-              value={stats.ceMois}
-              icon={<TrendingUp className="w-6 h-6" />}
-              gradient="from-emerald-500 to-emerald-600"
-              bg="bg-emerald-50"
-              iconColor="text-emerald-600"
-              trend="Nouveaux docs"
-            />
+            <StatCard title="Total Documents" value={stats.totalDocs} icon={<FolderOpen className="w-6 h-6" />} gradient="from-blue-500 to-blue-600" bg="bg-blue-50" iconColor="text-blue-600" trend="+12% ce mois" />
+            <StatCard title="Utilisateurs" value={stats.totalUsers} icon={<Users className="w-6 h-6" />} gradient="from-purple-500 to-purple-600" bg="bg-purple-50" iconColor="text-purple-600" trend="Actifs" />
+            <StatCard title="Ajouts ce mois" value={stats.ceMois} icon={<TrendingUp className="w-6 h-6" />} gradient="from-emerald-500 to-emerald-600" bg="bg-emerald-50" iconColor="text-emerald-600" trend="Nouveaux docs" />
           </div>
 
-          {/* ACTIONS RAPIDES */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
               { href: '/dashboard/documents/add', icon: FilePlus, label: 'Nouveau document', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100' },
@@ -234,18 +340,13 @@ export default function DashboardPage() {
               { href: '/dashboard/search', icon: Search, label: 'Recherche avancée', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100' },
               { href: '/dashboard/users', icon: Users, label: 'Gérer les utilisateurs', color: 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' },
             ].map((action) => (
-              <a
-                key={action.href}
-                href={action.href}
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl ${action.color} transition-all duration-200 cursor-pointer group`}
-              >
+              <a key={action.href} href={action.href} className={`flex flex-col items-center gap-2 p-4 rounded-xl ${action.color} transition-all duration-200 cursor-pointer group`}>
                 <action.icon className="w-7 h-7" />
                 <span className="text-xs font-medium text-center leading-tight">{action.label}</span>
               </a>
             ))}
           </div>
 
-          {/* DERNIERS DOCUMENTS */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -256,12 +357,10 @@ export default function DashboardPage() {
                 Voir tout <ChevronRight className="w-4 h-4" />
               </a>
             </div>
-
             {derniersDocs.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-400">
                 <FolderOpen className="w-12 h-12 mb-3 opacity-50" />
                 <p className="font-medium">Aucun document pour l'instant</p>
-                <p className="text-sm">Commencez par ajouter votre premier document</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -285,13 +384,10 @@ export default function DashboardPage() {
                             <span className="text-sm font-medium text-slate-800 truncate max-w-xs">{doc.intitule}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm text-slate-600">{doc.type_document}</span>
-                        </td>
+                        <td className="px-6 py-4"><span className="text-sm text-slate-600">{doc.type_document}</span></td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getConfBadge(doc.niveau_confidentialite)}`}>
-                            <Shield className="w-3 h-3 mr-1" />
-                            {doc.niveau_confidentialite}
+                            <Shield className="w-3 h-3 mr-1" />{doc.niveau_confidentialite}
                           </span>
                         </td>
                         <td className="px-6 py-4">
@@ -307,7 +403,6 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-
         </main>
       </div>
     </div>
@@ -321,9 +416,7 @@ function StatCard({ title, value, icon, gradient, bg, iconColor, trend }: {
   return (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between mb-4">
-        <div className={`w-12 h-12 rounded-xl ${bg} ${iconColor} flex items-center justify-center`}>
-          {icon}
-        </div>
+        <div className={`w-12 h-12 rounded-xl ${bg} ${iconColor} flex items-center justify-center`}>{icon}</div>
         <span className="text-xs text-slate-400 font-medium">{trend}</span>
       </div>
       <div className={`text-3xl font-bold bg-gradient-to-r ${gradient} bg-clip-text text-transparent mb-1`}>
