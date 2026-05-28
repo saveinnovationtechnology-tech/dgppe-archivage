@@ -15,43 +15,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Email et mot de passe requis' }, { status: 400 })
     }
 
-    // Créer l'utilisateur Auth avec confirmation automatique
+    // Créer l'utilisateur Auth + métadonnées → le trigger crée le profil automatiquement
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-    })
-
-    if (authError) throw authError
-    
-
-    // Créer le profil dans la table profils
-    const { error: profilError } = await supabaseAdmin
-      .from('profils')
-      .insert({
-        id: authData.user.id,
-        email,
+      user_metadata: {
         nom,
         prenom,
         direction,
         role,
         actif,
-      })
+      }
+    })
 
-    if (profilError) {
-      // Supprimer l'utilisateur auth si le profil échoue
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-      throw profilError
-    }
-    
+    if (authError) throw authError
+
+    console.log('User créé avec metadata:', authData.user.user_metadata)
 
     return NextResponse.json({ success: true, userId: authData.user.id })
-} catch (error: unknown) {
-    console.error('Erreur brute:', JSON.stringify(error))
-    console.error('Type:', typeof error)
-    console.error('Erreur complète:', error)
+
+  } catch (error: unknown) {
+    console.error('Erreur:', error)
     return NextResponse.json({ error: JSON.stringify(error) }, { status: 400 })
   }
-
-
 }

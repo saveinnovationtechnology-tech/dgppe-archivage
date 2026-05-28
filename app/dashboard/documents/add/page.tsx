@@ -10,7 +10,7 @@ import {
   Search, Users, ClipboardList, LogOut, ChevronRight,
   FileText, Upload, X, CheckCircle, AlertCircle,
   Shield, Calendar, Hash, BookOpen, Briefcase,
-  Menu, Bell, User
+  Menu, Bell, User, Loader2, Brain, Sparkles, ArrowLeft
 } from 'lucide-react'
 
 export default function AddDocumentPage() {
@@ -18,8 +18,10 @@ export default function AddDocumentPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const [indexing, setIndexing] = useState(false)
+  const [indexProgress, setIndexProgress] = useState('')
   const [message, setMessage] = useState('')
-  const [messageType, setMessageType] = useState<'success' | 'error'>('success')
+  const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('success')
   const [directions, setDirections] = useState<any[]>([])
   const [fichier, setFichier] = useState<File | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -27,6 +29,7 @@ export default function AddDocumentPage() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifLoading, setNotifLoading] = useState(false)
+  const [successDocId, setSuccessDocId] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     intitule: '',
@@ -75,10 +78,89 @@ export default function AddDocumentPage() {
     if (file && file.type === 'application/pdf') setFichier(file)
   }
 
+  // ============================================================
+  // INDEXATION AUTOMATIQUE ARIA
+  // ============================================================
+
+  const indexDocumentWithAria = async (documentId: string) => {
+    setIndexing(true)
+    setIndexProgress('Initialisation de l\'indexation ARIA...')
+
+    try {
+      const response = await fetch('/api/indexer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        console.error('[ARIA Index] Erreur:', error)
+        setIndexProgress(`⚠️ Indexation échouée : ${error.message || 'erreur inconnue'}`)
+        setMessageType('error')
+        setIndexing(false)
+        return
+      }
+
+      // Lire le stream SSE
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+
+      if (!reader) {
+        setIndexProgress('❌ Impossible de lire la réponse du serveur')
+        setIndexing(false)
+        return
+      }
+
+      let fullMessage = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        fullMessage += decoder.decode(value, { stream: true })
+        const lines = fullMessage.split('\n')
+
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i]
+          if (line.startsWith('data: ')) {
+            try {
+              const json = JSON.parse(line.slice(6))
+              if (json.status) setIndexProgress(json.status)
+              if (json.error) {
+                console.error('[ARIA] Erreur streaming:', json.error)
+                setMessageType('error')
+              }
+            } catch (e) {
+              console.error('[ARIA] Parse JSON échoué:', e)
+            }
+          }
+        }
+
+        fullMessage = lines[lines.length - 1]
+      }
+
+      setIndexProgress('✅ Document indexé avec succès dans ARIA !')
+      setMessageType('success')
+
+    } catch (err: any) {
+      console.error('[ARIA Index] Exception:', err)
+      setIndexProgress(`❌ Erreur d'indexation : ${err.message}`)
+      setMessageType('error')
+    } finally {
+      setIndexing(false)
+    }
+  }
+
+  // ============================================================
+  // SOUMISSION FORMULAIRE
+  // ============================================================
+
   const handleSubmit = async (e: any) => {
     e.preventDefault()
     setLoading(true)
     setMessage('')
+    setIndexProgress('')
 
     if (!form.intitule || !form.type_document || !form.direction_origine || !form.auteur_service) {
       setMessage('Veuillez remplir tous les champs obligatoires.')
@@ -112,6 +194,7 @@ export default function AddDocumentPage() {
         fichier_taille = fichier.size
       }
 
+      // 1. Créer le document
       const { data: newDoc, error } = await supabase.from('documents').insert([{
         ...form,
         code_document: form.code_document || null,
@@ -122,24 +205,34 @@ export default function AddDocumentPage() {
         fichier_nom,
         fichier_taille,
         created_by: user?.id || null,
+        statut: 'actif'
       }]).select().single()
 
       if (error) throw error
 
+      // 2. Logger l'action
       await logAction(
         'creation_document',
         `Création du document : ${form.intitule} (${form.type_document}) — ${form.direction_origine}`,
         newDoc?.id || null
       )
 
-      setMessage('Document enregistré avec succès !')
+      setSuccessDocId(newDoc?.id || null)
+      setMessage('✅ Document enregistré avec succès ! Indexation ARIA en cours...')
       setMessageType('success')
-      setTimeout(() => router.push('/dashboard'), 2000)
+      setLoading(false)
+
+      // 3. Lancer l'indexation ARIA
+      if (newDoc?.id) {
+        await indexDocumentWithAria(newDoc.id)
+      }
+
+      // 4. Rediriger après 3 secondes
+      setTimeout(() => router.push('/dashboard'), 3000)
 
     } catch (err: any) {
-      setMessage(`Erreur : ${err.message}`)
+      setMessage(`❌ Erreur : ${err.message}`)
       setMessageType('error')
-    } finally {
       setLoading(false)
     }
   }
@@ -333,21 +426,39 @@ export default function AddDocumentPage() {
             <div className="relative z-10">
               <p className="text-blue-200 text-sm font-medium mb-1">Gestion documentaire</p>
               <h3 className="text-white text-2xl font-bold mb-2">Nouveau document</h3>
-              <p className="text-blue-200 text-sm">Complétez le formulaire ci-dessous pour enregistrer un document dans la base.</p>
+              <p className="text-blue-200 text-sm">Complétez le formulaire ci-dessous pour enregistrer un document dans la base. ARIA l'indexera automatiquement.</p>
             </div>
             <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-20">
               <FilePlus className="w-24 h-24 text-white" />
             </div>
           </div>
 
-          {/* Message */}
+          {/* Message Principal */}
           {message && (
-            <div className={`flex items-center gap-3 p-4 rounded-xl mb-6 border ${messageType === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+            <div className={`flex items-start gap-3 p-4 rounded-xl mb-6 border ${messageType === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : messageType === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
               {messageType === 'success'
-                ? <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                : <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                ? <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                : messageType === 'error'
+                ? <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                : <Brain className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
               }
-              <span className="text-sm font-medium">{message}</span>
+              <div className="flex-1">
+                <span className="text-sm font-medium">{message}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Message d'indexation ARIA */}
+          {indexProgress && (
+            <div className="flex items-start gap-3 p-4 rounded-xl mb-6 border bg-purple-50 border-purple-200 text-purple-800">
+              {indexing ? (
+                <Loader2 className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5 animate-spin" />
+              ) : (
+                <Sparkles className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <span className="text-sm font-medium">{indexProgress}</span>
+              </div>
             </div>
           )}
 
@@ -576,26 +687,28 @@ export default function AddDocumentPage() {
             <div className="flex items-center gap-4">
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || indexing}
                 className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold text-sm shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-blue-800 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
               >
-                {loading ? (
+                {loading || indexing ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Enregistrement...
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {loading ? 'Sauvegarde...' : 'Indexation ARIA...'}
                   </>
                 ) : (
                   <>
                     <CheckCircle className="w-4 h-4" />
-                    Enregistrer le document
+                    Sauvegarder le document
                   </>
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => router.push('/dashboard')}
-                className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-colors"
+                disabled={loading || indexing}
+                className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-semibold text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
+                <ArrowLeft className="w-4 h-4" />
                 Annuler
               </button>
             </div>

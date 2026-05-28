@@ -7,10 +7,11 @@ import {
   LayoutDashboard, FilePlus, FolderOpen, Search,
   Users, ClipboardList, LogOut, FileText, Bell,
   TrendingUp, Calendar, Shield, ChevronRight,
-  Building2, Menu, X, User, CheckCheck, AlertTriangle, Info
+  Building2, Menu, X, CheckCheck, AlertTriangle,
+  Info, Sparkles
 } from 'lucide-react'
 import {
-  getNonLues, getToutesNotifications,
+  getToutesNotifications,
   marquerCommeLue, marquerToutesLues,
   verifierNotificationsAuto
 } from '@/lib/supabase/notifications'
@@ -33,22 +34,15 @@ export default function DashboardPage() {
       if (!user) { router.push('/login'); return }
       setUser(user)
 
-      // Charger profil
       const { data: profilData } = await supabase
-        .from('profils')
-        .select('*')
-        .eq('id', user.id)
-        .single()
+        .from('profils').select('*').eq('id', user.id).single()
       setProfil(profilData)
 
-      // Vérifier notifications auto
       await verifierNotificationsAuto(user.id, profilData)
 
-      // Charger notifications
       const notifs = await getToutesNotifications(user.id)
       setNotifications(notifs)
 
-      // Stats
       const { count: totalDocs } = await supabase
         .from('documents').select('*', { count: 'exact', head: true })
       const { count: totalUsers } = await supabase
@@ -70,7 +64,6 @@ export default function DashboardPage() {
     init()
   }, [])
 
-  // Fermer dropdown notif en cliquant ailleurs
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
@@ -88,9 +81,7 @@ export default function DashboardPage() {
 
   const handleMarquerLue = async (notifId: string) => {
     await marquerCommeLue(notifId)
-    setNotifications(prev =>
-      prev.map(n => n.id === notifId ? { ...n, lue: true } : n)
-    )
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, lue: true } : n))
   }
 
   const handleToutesLues = async () => {
@@ -107,7 +98,7 @@ export default function DashboardPage() {
     { href: '/dashboard/documents/view', icon: FolderOpen, label: 'Documents' },
     { href: '/dashboard/search', icon: Search, label: 'Rechercher' },
     { href: '/dashboard/users', icon: Users, label: 'Utilisateurs' },
-    { href: '/dashboard/logs', icon: ClipboardList, label: 'Journaux d\'activité' },
+    { href: '/dashboard/logs', icon: ClipboardList, label: "Journaux d'activité" },
   ]
 
   const getConfBadge = (niveau: string) => {
@@ -136,7 +127,7 @@ export default function DashboardPage() {
 
       {/* SIDEBAR */}
       <aside className={`
-        ${sidebarOpen ? 'w-64' : 'w-20'} 
+        ${sidebarOpen ? 'w-64' : 'w-20'}
         transition-all duration-300 ease-in-out
         bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900
         flex flex-col shadow-2xl relative z-10
@@ -177,6 +168,24 @@ export default function DashboardPage() {
               {sidebarOpen && item.active && <ChevronRight className="w-4 h-4 ml-auto" />}
             </a>
           ))}
+
+          {/* ARIA dans la sidebar */}
+          <a
+            href="/dashboard/ia"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group
+              text-violet-300 hover:bg-violet-500/20 hover:text-violet-200 relative mt-2"
+          >
+            <div className="relative flex-shrink-0">
+              <Sparkles className="w-5 h-5" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border border-slate-800 animate-pulse" />
+            </div>
+            {sidebarOpen && (
+              <>
+                <span className="text-sm font-medium">ARIA — IA Interne</span>
+                <span className="ml-auto text-xs bg-violet-500/30 text-violet-300 px-1.5 py-0.5 rounded-md font-semibold">IA</span>
+              </>
+            )}
+          </a>
         </nav>
 
         <div className="p-4 border-t border-white/10">
@@ -259,7 +268,7 @@ export default function DashboardPage() {
                             {getNotifIcon(notif.type)}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-2">
-                                <p className={`text-sm font-medium text-slate-800 ${!notif.lue ? 'font-semibold' : ''}`}>
+                                <p className={`text-sm text-slate-800 ${!notif.lue ? 'font-semibold' : 'font-medium'}`}>
                                   {notif.titre}
                                 </p>
                                 {!notif.lue && (
@@ -276,10 +285,7 @@ export default function DashboardPage() {
                           </div>
                           {notif.titre.toLowerCase().includes('mot de passe') && !notif.lue && (
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                router.push('/dashboard/profile')
-                              }}
+                              onClick={(e) => { e.stopPropagation(); router.push('/dashboard/profile') }}
                               className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium"
                             >
                               → Modifier mon mot de passe
@@ -296,7 +302,7 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* PROFIL CLIQUABLE */}
+            {/* PROFIL */}
             <button
               onClick={() => router.push('/dashboard/profile')}
               className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold hover:opacity-90 hover:scale-105 transition-all duration-200 shadow-md"
@@ -304,16 +310,17 @@ export default function DashboardPage() {
             >
               {userInitial}
             </button>
-
           </div>
         </header>
 
-        {/* MAIN - identique à avant */}
+        {/* MAIN */}
         <main className="flex-1 overflow-y-auto p-8">
+
+          {/* BANNIÈRE BIENVENUE */}
           <div className="relative bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-6 mb-8 overflow-hidden shadow-xl">
             <div className="absolute inset-0 opacity-10">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2"></div>
-              <div className="absolute bottom-0 left-1/3 w-40 h-40 bg-white rounded-full translate-y-1/2"></div>
+              <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2" />
+              <div className="absolute bottom-0 left-1/3 w-40 h-40 bg-white rounded-full translate-y-1/2" />
             </div>
             <div className="relative z-10">
               <p className="text-blue-200 text-sm font-medium mb-1">Bienvenue 👋</p>
@@ -327,26 +334,67 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* STATS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <StatCard title="Total Documents" value={stats.totalDocs} icon={<FolderOpen className="w-6 h-6" />} gradient="from-blue-500 to-blue-600" bg="bg-blue-50" iconColor="text-blue-600" trend="+12% ce mois" />
-            <StatCard title="Utilisateurs" value={stats.totalUsers} icon={<Users className="w-6 h-6" />} gradient="from-purple-500 to-purple-600" bg="bg-purple-50" iconColor="text-purple-600" trend="Actifs" />
-            <StatCard title="Ajouts ce mois" value={stats.ceMois} icon={<TrendingUp className="w-6 h-6" />} gradient="from-emerald-500 to-emerald-600" bg="bg-emerald-50" iconColor="text-emerald-600" trend="Nouveaux docs" />
+            <StatCard
+              title="Total Documents" value={stats.totalDocs}
+              icon={<FolderOpen className="w-6 h-6" />}
+              gradient="from-blue-500 to-blue-600" bg="bg-blue-50"
+              iconColor="text-blue-600" trend="+12% ce mois"
+            />
+            <StatCard
+              title="Utilisateurs" value={stats.totalUsers}
+              icon={<Users className="w-6 h-6" />}
+              gradient="from-purple-500 to-purple-600" bg="bg-purple-50"
+              iconColor="text-purple-600" trend="Actifs"
+            />
+            <StatCard
+              title="Ajouts ce mois" value={stats.ceMois}
+              icon={<TrendingUp className="w-6 h-6" />}
+              gradient="from-emerald-500 to-emerald-600" bg="bg-emerald-50"
+              iconColor="text-emerald-600" trend="Nouveaux docs"
+            />
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {/* ACTIONS RAPIDES */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
             {[
-              { href: '/dashboard/documents/add', icon: FilePlus, label: 'Nouveau document', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100' },
-              { href: '/dashboard/documents/view', icon: FolderOpen, label: 'Voir les documents', color: 'text-purple-600 bg-purple-50 hover:bg-purple-100' },
-              { href: '/dashboard/search', icon: Search, label: 'Recherche avancée', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100' },
-              { href: '/dashboard/users', icon: Users, label: 'Gérer les utilisateurs', color: 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' },
+              { href: '/dashboard/documents/add', icon: FilePlus, label: 'Nouveau document', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-100' },
+              { href: '/dashboard/documents/view', icon: FolderOpen, label: 'Voir les documents', color: 'text-purple-600 bg-purple-50 hover:bg-purple-100 border border-purple-100' },
+              { href: '/dashboard/search', icon: Search, label: 'Recherche avancée', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-100' },
+              { href: '/dashboard/users', icon: Users, label: 'Gérer les utilisateurs', color: 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100' },
             ].map((action) => (
-              <a key={action.href} href={action.href} className={`flex flex-col items-center gap-2 p-4 rounded-xl ${action.color} transition-all duration-200 cursor-pointer group`}>
+              <a
+                key={action.href}
+                href={action.href}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl ${action.color} transition-all duration-200 cursor-pointer`}
+              >
                 <action.icon className="w-7 h-7" />
                 <span className="text-xs font-medium text-center leading-tight">{action.label}</span>
               </a>
             ))}
+
+            {/* BOUTON ARIA */}
+            <a
+              href="/dashboard/ia"
+              className="flex flex-col items-center gap-2 p-4 rounded-xl
+                bg-gradient-to-br from-violet-50 to-indigo-50
+                border border-violet-200 hover:border-violet-400
+                hover:shadow-lg hover:shadow-violet-100
+                transition-all duration-200 cursor-pointer group relative overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-400/5 to-blue-400/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative">
+                <Sparkles className="w-7 h-7 text-violet-600 group-hover:scale-110 transition-transform duration-200" />
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white animate-pulse" />
+              </div>
+              <span className="text-xs font-semibold text-center leading-tight text-violet-700 relative">
+                ARIA — IA Interne
+              </span>
+            </a>
           </div>
 
+          {/* DERNIERS DOCUMENTS */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -384,7 +432,9 @@ export default function DashboardPage() {
                             <span className="text-sm font-medium text-slate-800 truncate max-w-xs">{doc.intitule}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4"><span className="text-sm text-slate-600">{doc.type_document}</span></td>
+                        <td className="px-6 py-4">
+                          <span className="text-sm text-slate-600">{doc.type_document}</span>
+                        </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getConfBadge(doc.niveau_confidentialite)}`}>
                             <Shield className="w-3 h-3 mr-1" />{doc.niveau_confidentialite}
@@ -416,7 +466,9 @@ function StatCard({ title, value, icon, gradient, bg, iconColor, trend }: {
   return (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between mb-4">
-        <div className={`w-12 h-12 rounded-xl ${bg} ${iconColor} flex items-center justify-center`}>{icon}</div>
+        <div className={`w-12 h-12 rounded-xl ${bg} ${iconColor} flex items-center justify-center`}>
+          {icon}
+        </div>
         <span className="text-xs text-slate-400 font-medium">{trend}</span>
       </div>
       <div className={`text-3xl font-bold bg-gradient-to-r ${gradient} bg-clip-text text-transparent mb-1`}>
