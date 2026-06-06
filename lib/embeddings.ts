@@ -1,83 +1,71 @@
-// lib/ai/embeddings.ts (partie HuggingFace)
+// lib/ai/embeddings.ts
+console.log(
+  '🚨 EMBEDDINGS VERSION 2026-06-06 23:40'
+)
 
-async function creerEmbeddingHuggingFace(texte: string): Promise<number[]> {
+import { HfInference } from '@huggingface/inference'
+
+const DEFAULT_MODEL =
+  'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
+
+const EXPECTED_DIMENSION = 768
+
+export async function creerEmbedding(
+  texte: string
+): Promise<number[]> {
   const apiKey = process.env.HUGGINGFACE_API_KEY
-  const model = process.env.HUGGINGFACE_EMBED_MODEL || 'sentence-transformers/all-mpnet-base-v2'
 
   if (!apiKey) {
     throw new Error('HUGGINGFACE_API_KEY non défini')
   }
 
-  const url = `https://api-inference.huggingface.co/models/${model}`
+  const model =
+    process.env.HUGGINGFACE_EMBED_MODEL ||
+    DEFAULT_MODEL
 
-  try {
-    console.log(`[EMBED] 🤗 Appel HuggingFace: ${model}`)
+  const hf = new HfInference(apiKey)
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        inputs: texte,
-        options: {
-          wait_for_model: true,  // ✅ Attendre si modèle pas chargé
-        },
-      }),
-    })
+  console.log('[EMBED] 🤗 Génération embedding')
+  console.log('[EMBED] 📦 Modèle:', model)
 
-    // Log détaillé
-    console.log(`[EMBED] 📊 Status: ${response.status} ${response.statusText}`)
+  const result = await hf.featureExtraction({
+    model,
+    inputs: texte.slice(0, 4000),
+  })
 
-    if (!response.ok) {
-      const erreurText = await response.text()
-      console.error(`[EMBED] ❌ Erreur ${response.status}:`, erreurText)
+  let embedding: number[]
 
-      if (response.status === 401) {
-        throw new Error(`Clé API HuggingFace invalide ou expirée`)
-      }
-      if (response.status === 429) {
-        throw new Error(`Rate limit HuggingFace atteint (429). Attendre 1min.`)
-      }
-      if (response.status === 503) {
-        throw new Error(`Modèle en chargement. Réessayer dans quelques secondes.`)
-      }
+  if (
+    Array.isArray(result) &&
+    typeof result[0] === 'number'
+  ) {
+    embedding = result as number[]
+  } else if (
+    Array.isArray(result) &&
+    Array.isArray(result[0])
+  ) {
+    embedding = result[0] as number[]
+  } else {
+    throw new Error(
+      'Format embedding HuggingFace inattendu'
+    )
+  }
 
-      throw new Error(`HuggingFace API error ${response.status}: ${erreurText}`)
-    }
+  if (embedding.length !== EXPECTED_DIMENSION) {
+    throw new Error(
+      `Dimension incorrecte ${embedding.length}`
+    )
+  }
 
-    const data = await response.json()
+  return embedding
+}
 
-    // ✅ Vérifier le format de réponse
-    let embedding: number[]
-
-    if (Array.isArray(data) && Array.isArray(data[0])) {
-      // Format: [[embedding]]
-      embedding = data[0]
-    } else if (Array.isArray(data)) {
-      // Format: [embedding]
-      embedding = data
-    } else if (data.embedding) {
-      // Format: {embedding: [...]}
-      embedding = data.embedding
-    } else {
-      console.error('[EMBED] ❌ Format réponse inattendu:', JSON.stringify(data).slice(0, 200))
-      throw new Error(`Format réponse HuggingFace inattendu`)
-    }
-
-    // ✅ Vérifier dimension
-    const expectedDim = 768
-    if (embedding.length !== expectedDim) {
-      throw new Error(`Dimension embedding incorrect: ${embedding.length} au lieu de ${expectedDim}`)
-    }
-
-    console.log(`[EMBED] ✅ Embedding créé (${embedding.length} dimensions)`)
-    return embedding
-
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error(`[EMBED] ❌ Erreur HuggingFace:`, message)
-    throw error
+export function getEmbeddingProvider() {
+  return {
+    nom: 'huggingface',
+    modele:
+      process.env.HUGGINGFACE_EMBED_MODEL ||
+      DEFAULT_MODEL,
+    dimensionEmbedding: EXPECTED_DIMENSION,
   }
 }

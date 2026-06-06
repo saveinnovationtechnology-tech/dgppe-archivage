@@ -3,7 +3,7 @@
 // INDEXATION DES DOCUMENTS
 // Provider: HuggingFace (Production) + Ollama (Local/Fallback)
 // ============================================================
-
+import { HfInference } from "@huggingface/inference";
 import { createClient } from '@/lib/supabase/server'
 
 const TAILLE_CHUNK = 500
@@ -260,84 +260,71 @@ async function genererEmbeddingHuggingFace(
     }
 
     const apiKey = process.env.HUGGINGFACE_API_KEY
+
     if (!apiKey) {
-      throw new Error('❌ HUGGINGFACE_API_KEY manquante dans .env.local')
+      throw new Error('HUGGINGFACE_API_KEY manquante')
     }
 
     const model =
       process.env.HUGGINGFACE_EMBED_MODEL ||
-      'sentence-transformers/all-mpnet-base-v2'
+      'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
 
-    const texteTronque = texte.slice(0, 512) // HuggingFace: 512 tokens max
+    console.log(`[INDEXER] 🤗 Génération embedding HuggingFace`)
+    console.log(`[INDEXER] 📦 Modèle: ${model}`)
+    console.log(`[INDEXER] 📝 Taille texte: ${texte.length}`)
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    const hf = new HfInference(apiKey)
 
-    try {
-      const response = await fetch(
-        `https://api-inference.huggingface.co/pipeline/feature-extraction/${model}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            inputs: texteTronque,
-            options: {
-              wait_for_model: true,
-            },
-          }),
-          signal: controller.signal,
-        }
-      )
+    const result = await hf.featureExtraction({
+      model,
+      inputs: texte.slice(0, 4000),
+    })
 
-      clearTimeout(timeoutId)
+    let embedding: number[] | null = null
 
-      if (!response.ok) {
-        const erreur = await response.text()
-
-        // ✅ Retry si rate limit (429)
-        if (response.status === 429 && tentative < RETRY_ATTEMPTS) {
-          console.warn(`[INDEXER] ⏳ Rate limit HF, tentative ${tentative + 1}/${RETRY_ATTEMPTS}`)
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
-          return genererEmbeddingHuggingFace(texte, tentative + 1)
-        }
-
-        throw new Error(`HuggingFace ${response.status}: ${erreur}`)
+    if (Array.isArray(result)) {
+      if (typeof result[0] === 'number') {
+        embedding = result as number[]
+      } else if (Array.isArray(result[0])) {
+        embedding = result[0] as number[]
       }
-
-      const data = await response.json()
-
-      // HuggingFace retourne directement: [768 dimensions] ou [[...]]
-      let embedding: number[] | null = null
-
-      if (Array.isArray(data)) {
-        if (typeof data[0] === 'number') {
-          embedding = data as number[]
-        } else if (Array.isArray(data[0])) {
-          embedding = data[0] as number[]
-        }
-      }
-
-      if (embedding && embedding.length > 0) {
-        console.log(`[INDEXER] ✅ Embedding HF: ${embedding.length} dimensions`)
-        return embedding
-      }
-
-      console.warn('[INDEXER] ⚠️ Format embedding HuggingFace inattendu:', JSON.stringify(data).slice(0, 100))
-      return null
-
-    } finally {
-      clearTimeout(timeoutId)
     }
 
+    if (!embedding || embedding.length === 0) {
+      throw new Error('Embedding vide retourné par HuggingFace')
+    }
+
+    console.log(
+      `[INDEXER] ✅ Embedding créé (${embedding.length} dimensions)`
+    )
+
+    return embedding
+
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Erreur inconnue'
-    console.error('[INDEXER] ❌ Erreur embedding HuggingFace:', msg)
+    console.error(
+      `[INDEXER] ❌ Erreur embedding HuggingFace (tentative ${tentative})`,
+      error
+    )
+
+    if (tentative < RETRY_ATTEMPTS) {
+      console.log(
+        `[INDEXER] 🔄 Nouvelle tentative ${tentative + 1}/${RETRY_ATTEMPTS}`
+      )
+
+      await new Promise(resolve =>
+        setTimeout(resolve, RETRY_DELAY)
+      )
+
+      return genererEmbeddingHuggingFace(
+        texte,
+        tentative + 1
+      )
+    }
+
     return null
   }
 }
+
 
 // ============================================================
 // GÉNÉRER EMBEDDING AVEC OLLAMA (Fallback Local)

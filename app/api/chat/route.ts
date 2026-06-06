@@ -5,6 +5,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import Groq from 'groq-sdk'
+import { creerEmbedding } from '@/lib/embeddings'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 
@@ -14,7 +15,6 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 
 const MODELE_CHAT = process.env.GROQ_CHAT_MODEL || 'llama-3.1-8b-instant'
 const GROQ_HOST = 'api.groq.com'
-const GROQ_EMBED_MODEL = 'nomic-embed-text-v1.5'
 const TIMEOUT_MS = 60000
 const NB_RESULTATS_RAG = 5
 const SEUIL_SIMILARITE = 0.3
@@ -66,59 +66,7 @@ interface ReponseStream {
  * Génère un embedding vectoriel via l'API Groq
  * Remplace HuggingFace pour plus de cohérence
  */
-async function genererEmbeddingGroq(texte: string): Promise<number[] | null> {
-  try {
-    if (!texte || texte.trim().length === 0) {
-      console.warn('[CHAT] ⚠️ Texte vide pour embedding')
-      return null
-    }
 
-    const texteTronque = texte.substring(0, 8192) // Limite Groq
-
-    console.log('[CHAT] 🔄 Appel Groq Embedding...')
-
-    const response = await fetch(
-      `https://${GROQ_HOST}/openai/v1/embeddings`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: GROQ_EMBED_MODEL,
-          input: texteTronque
-        })
-      }
-    )
-
-    if (!response.ok) {
-      const errMsg = await response.text()
-      console.error('[CHAT] ❌ Erreur Groq Embedding:', response.status, errMsg)
-      return null
-    }
-
-    const data = await response.json()
-
-    // Format OpenAI standard
-    if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-      const embedding = data.data[0].embedding
-
-      if (Array.isArray(embedding)) {
-        console.log('[CHAT] ✅ Embedding généré:', embedding.length, 'dimensions')
-        return embedding
-      }
-    }
-
-    console.warn('[CHAT] ⚠️ Format embedding Groq inattendu:', JSON.stringify(data).substring(0, 100))
-    return null
-
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Erreur inconnue'
-    console.error('[CHAT] ❌ Erreur genererEmbeddingGroq:', msg)
-    return null
-  }
-}
 
 // ============================================================
 // RECHERCHE PAR SIMILARITÉ (RAG)
@@ -139,7 +87,13 @@ async function rechercherDocuments(query: string, userRole: string = 'agent_cons
     console.log(`[CHAT] 👤 Rôle utilisateur: ${userRole}`)
 
     // Générer embedding de la requête
-    const queryEmbedding = await genererEmbeddingGroq(query)
+    const queryEmbedding = await creerEmbedding(query)
+
+console.log(
+  '[CHAT] Query embedding:',
+  queryEmbedding.length,
+  'dimensions'
+)
 
     if (!queryEmbedding) {
       console.error('[CHAT] ❌ Impossible de générer embedding pour la query')
@@ -573,23 +527,7 @@ export async function GET() {
         service: 'ARIA Chat API',
         version: '1.0.0',
         timestamp: new Date().toISOString(),
-        config: {
-          chat: {
-            modele: MODELE_CHAT,
-            provider: 'Groq',
-            host: GROQ_HOST
-          },
-          embedding: {
-            modele: GROQ_EMBED_MODEL,
-            provider: 'Groq',
-            host: GROQ_HOST
-          },
-          rag: {
-            maxResults: NB_RESULTATS_RAG,
-            similarityThreshold: SEUIL_SIMILARITE,
-            timeoutMs: TIMEOUT_MS
-          }
-        }
+      
       },
       {
         status: 200,
@@ -616,7 +554,5 @@ export async function GET() {
 // EXPORTS POUR TESTING
 // ============================================================
 
-export const config = {
-  runtime: 'nodejs',
-  maxDuration: 60
-}
+export const runtime = 'nodejs'
+export const maxDuration = 60

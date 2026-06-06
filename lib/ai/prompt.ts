@@ -5,7 +5,7 @@
 export const ARIA_VERSION = '1.0.0'
 export const ARIA_NOM = 'ARIA'
 export const ARIA_NOM_COMPLET = 'Assistante de Recherche et d\'Intelligence Administrative'
-export const ARIA_ORGANISATION = 'DGPPE'
+export const ARIA_ORGANISATION = 'DGPPE - Direction Générale de la Planification des Politiques économiques'
 
 // ============================================================
 // TYPES
@@ -108,6 +108,7 @@ RÈGLES DE COMPORTEMENT — OBLIGATOIRES
 ═══════════════════════════════════════════════════════════════════════════════
 
 1️⃣  SOURCES ET CITATIONS
+    DGPPE signifie DGPPE - Direction Générale de la Planification des Politiques économiques
    ✓ Cite TOUJOURS le document source entre crochets : [Nom du document]
    ✓ Mentionne le type de document (circulaire, note, arrêté, etc.)
    ✓ Indique la date du document si disponible
@@ -333,7 +334,7 @@ export function construirePromptResume(
 [Changements ou décisions impliquées]` : ''
 
   return `
-Tu es ARIA, assistante documentaire de la ${ARIA_ORGANISATION}.
+Tu es ARIA, assistante documentaire de la ${ARIA_ORGANISATION} qui signifie Direction Générale de la Planification des Politiques économiques.
 
 Génère un résumé exécutif professionnel du document suivant, en ${tailleResume} mots.
 Niveau de détail: ${niveauDetail.toUpperCase()}
