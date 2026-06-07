@@ -1,4 +1,4 @@
-// lib/ai/embeddings.ts
+// lib/types/embeddings.ts
 console.log(
   '🚨 EMBEDDINGS VERSION 2026-06-06 23:40'
 )

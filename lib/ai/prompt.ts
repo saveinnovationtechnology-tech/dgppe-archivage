@@ -274,12 +274,24 @@ export function formaterContexteDocuments(documents: DocumentContexte[]): string
     return `⚠️  AUCUN DOCUMENT PERTINENT TROUVÉ
 
 La base documentaire ne contient pas de document directement lié à cette question.
+⚠️ AUCUN DOCUMENT PERTINENT TROUVÉ
 
-🔄 En l'absence de document source officiel, tu PEUX répondre avec tes connaissances générales 
-en droit administratif et procédures institutionnelles standard, MAIS tu DOIS:
-1. Préciser clairement que tu ne t'appuies pas sur un document interne
-2. Recommander de vérifier auprès de la direction compétente
-3. Inviter l'utilisateur à soumettre une demande formelle si nécessaire`
+RÈGLE ABSOLUE :
+
+Tu ne disposes d'aucun document de la GED pour répondre.
+
+Tu dois répondre uniquement :
+
+"Je ne dispose pas d'information suffisante dans les archives DGPPE pour répondre à cette question."
+
+Tu ne dois :
+- ni utiliser tes connaissances générales
+- ni déduire
+- ni supposer
+- ni compléter la réponse
+
+Fin de la règle.
+Inviter l'utilisateur à soumettre une demande formelle si nécessaire`
   }
 
   const docsFormates = documents.map((doc, index) => {
@@ -354,6 +366,20 @@ ${document.contenu}
 ═════════════════════════════════════════════════════════════
 FORMAT À RESPECTER
 ═════════════════════════════════════════════════════════════
+RÈGLE ABSOLUE :
+Tu dois répondre EXCLUSIVEMENT à partir des informations présentes dans les documents fournis.
+
+Si l'information n'apparaît pas explicitement dans les documents :
+
+"Cette information n'est pas présente dans les documents de la GED."
+
+- Utilise uniquement les informations présentes dans le CONTEXTE.
+- N'invente jamais un document.
+- N'invente jamais un identifiant.
+- N'invente jamais une URL.
+- N'invente jamais une référence administrative.
+- Si l'information n'est pas présente dans le CONTEXTE, réponds :
+  "Je ne dispose pas d'information suffisante dans les archives DGPPE."
 
 ## 📋 Résumé — ${document.intitule || 'Document'}
 

@@ -112,6 +112,9 @@ console.log(
         similarity_threshold: SEUIL_SIMILARITE
       }
     )
+console.log('[CHAT] seuil =', SEUIL_SIMILARITE)
+console.log('[CHAT] nb_resultats =', NB_RESULTATS_RAG)
+console.log('[CHAT] resultats bruts =', resultats)
 
     if (error) {
       console.error('[CHAT] ❌ Erreur RPC search_embeddings:', error.message)
@@ -280,6 +283,12 @@ export async function POST(request: NextRequest) {
     console.log('─'.repeat(70))
 
     const chunks = await rechercherDocuments(query, userRole)
+    if (chunks.length === 0) {
+  return NextResponse.json({
+    message:
+      "Je n'ai trouvé aucun document pertinent dans la GED DGPPE."
+  })
+}
     const contexte = construireContexte(chunks)
 
     if (chunks.length > 0) {
@@ -377,42 +386,46 @@ export async function POST(request: NextRequest) {
             throw streamError
           }
 
-          // ============================================================
-          // ENVOI DES SOURCES
-          // ============================================================
+// ============================================================
+// ENVOI DES SOURCES
+// ============================================================
 
-          if (!streamClosed && chunks.length > 0) {
-            console.log('[CHAT] 📚 Envoi des sources...')
+if (!streamClosed && chunks.length > 0) {
+  console.log('[CHAT] 📚 Envoi des sources...')
 
-            const sources: Source[] = chunks.map(c => ({
-              id: c.id,
-              document_id: c.document_id,
-              contenu: c.contenu,
-              similarite: c.similarite ?? c.score ?? 0,
-              intitule: c.intitule,
-              type_document: c.type_document,
-              direction_origine: c.direction_origine
-            }))
+  const sources: Source[] = chunks.map((c) => ({
+    id: c.id,
+    document_id: c.document_id, // <-- important
+    contenu: c.contenu,
+    similarite: c.similarite ?? c.score ?? 0,
+    intitule: c.intitule ?? 'Document',
+    type_document: c.type_document ?? null,
+    direction_origine: c.direction_origine ?? null,
+  }))
 
-            try {
-              const sourcesMessage: ReponseStream = {
-                sources: sources,
-                done: false
-              }
+  try {
+    const sourcesMessage: ReponseStream = {
+      sources,
+      done: false,
+    }
 
-              streamController.enqueue(
-                new TextEncoder().encode(
-                  `data: ${JSON.stringify(sourcesMessage)}\n\n`
-                )
-              )
+    streamController.enqueue(
+      new TextEncoder().encode(
+        `data: ${JSON.stringify(sourcesMessage)}\n\n`
+      )
+    )
 
-              console.log(`[CHAT] ✅ ${sources.length} source(s) envoyée(s)`)
+    console.log(
+      `[CHAT] ✅ ${sources.length} source(s) envoyée(s)`
+    )
 
-            } catch (sourcesError) {
-              console.warn('[CHAT] ⚠️ Erreur envoi sources:', sourcesError)
-            }
-          }
-
+  } catch (sourcesError) {
+    console.warn(
+      '[CHAT] ⚠️ Erreur envoi sources:',
+      sourcesError
+    )
+  }
+}
           // ============================================================
           // FINALISATION
           // ============================================================

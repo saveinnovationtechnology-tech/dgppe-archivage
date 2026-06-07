@@ -6,8 +6,8 @@
 import { HfInference } from "@huggingface/inference";
 import { createClient } from '@/lib/supabase/server'
 
-const TAILLE_CHUNK = 500
-const CHEVAUCHEMENT = 50
+const TAILLE_CHUNK = 100
+const CHEVAUCHEMENT = 20
 const TIMEOUT_MS = 30000
 const RETRY_ATTEMPTS = 3
 const RETRY_DELAY = 2000

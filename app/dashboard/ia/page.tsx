@@ -18,9 +18,13 @@ import {
 
 interface Source {
   id: string
+  document_id: string
+  contenu: string
+  similarite: number
+  score: number
   intitule: string
   type_document: string | null
-  score: number
+  direction_origine: string | null
 }
 
 interface Message {
@@ -503,7 +507,13 @@ export default function IAPage() {
                           {msg.sources.map((source, i) => (
                             <button
                               key={i}
-                              onClick={() => ouvrirDocument(source.id)}
+                              onClick={() =>
+  window.open(
+    `/dashboard/documents/${source.document_id}`,
+    '_blank',
+    'noopener,noreferrer'
+  )
+}
                               className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs text-blue-700 transition-all group"
                               title={`Score de pertinence : ${Math.round(source.score * 100)}%`}
                             >
